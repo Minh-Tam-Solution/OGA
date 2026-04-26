@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0.0",
+  "framework_version": "6.3.0",
+  "generator": "endiorbot",
+  "generated_at": "2026-04-26T06:00:07.395Z",
+  "project": {
+    "id": "open-generative-ai",
+    "name": "Open-Generative-AI"
+  },
+  "tier": "STANDARD",
+  "stages": {
+    "00-foundation": "docs/00-foundation",
+    "01-planning": "docs/01-planning",
+    "02-design": "docs/02-design",
+    "04-build": "docs/04-build",
+    "05-test": "docs/05-test",
+    "06-deploy": "docs/06-deploy",
+    "08-collaborate": "docs/08-collaborate"
+  },
+  "gates": {
+    "current": "G0.1",
+    "passed": []
+  },
+  "techStack": {
+    "language": "JavaScript",
+    "hasTypeScript": false,
+    "hasDocker": false,
+    "hasCI": false,
+    "dependencies": [
+      "axios",
+      "next",
+      "react",
+      "react-dom",
+      "react-hot-toast",
+      "studio",
+      "workflow-builder",
+      "ai-agent"
+    ],
+    "devDependencies": [
+      "@eslint/eslintrc",
+      "@tailwindcss/vite",
+      "autoprefixer",
+      "electron",
+      "electron-builder",
+      "eslint",
+      "eslint-config-next",
+      "postcss",
+      "tailwindcss",
+      "vite"
+    ],
+    "scripts": {
+      "dev": "next dev",
+      "build": "next build",
+      "start": "next start",
+      "lint": "next lint",
+      "build:studio": "npm run build -w studio",
+      "build:workflow": "npm run build -w workflow-builder",
+      "build:agent": "npm run build -w ai-agent",
+      "build:packages": "npm run build:workflow && npm run build:agent && npm run build:studio",
+      "setup": "git submodule update --init --recursive && npm install && npm run build:packages",
+      "vite:dev": "vite",
+      "vite:build": "vite build",
+      "electron:dev": "npm run vite:build && electron .",
+      "electron:build": "vite build && electron-builder --mac",
+      "electron:build:win": "vite build && electron-builder --win",
+      "electron:build:linux": "vite build && electron-builder --linux",
+      "electron:build:all": "vite build && electron-builder --mac --win --linux"
+    },
+    "packageManager": "npm",
+    "framework": "Next.js"
+  },
+  "analyzedAt": "2026-04-26T06:00:07.395Z"
+}

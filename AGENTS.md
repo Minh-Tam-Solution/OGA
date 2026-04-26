@@ -1,0 +1,229 @@
+# AGENTS.md - AI Agent Roster
+
+## Overview
+
+This document defines the AI agents available for **Open-Generative-AI** (STANDARD tier).
+
+**Total Agents:** 6
+**Framework:** SDLC 6.3.0
+
+---
+
+## Agent Roster
+
+| ID | Name | Model | Description |
+|-----|------|-------|-------------|
+| @assistant | Assistant | sonnet | General-purpose AI assistant for quick tasks |
+| @coder | Coder | sonnet | Code generation and implementation |
+| @pm | Product Manager | sonnet | Requirements gathering and planning |
+| @reviewer | Code Reviewer | opus | Code review and quality assurance |
+| @architect | Architect | opus | System design and architecture decisions |
+| @tester | QA Tester | sonnet | Test planning and execution |
+
+---
+
+## Agent Details
+
+### @assistant - Assistant
+
+**Model:** sonnet
+**Min Tier:** LITE
+
+General-purpose AI assistant for quick tasks
+
+**Capabilities:**
+- General questions
+- Quick lookups
+- Simple tasks
+
+---
+
+### @coder - Coder
+
+**Model:** sonnet
+**Min Tier:** LITE
+
+Code generation and implementation
+
+**Capabilities:**
+- Write code
+- Implement features
+- Fix bugs
+- Refactor
+
+---
+
+### @pm - Product Manager
+
+**Model:** sonnet
+**Min Tier:** STANDARD
+
+Requirements gathering and planning
+
+**Capabilities:**
+- Requirements
+- User stories
+- Prioritization
+- Roadmap
+
+---
+
+### @reviewer - Code Reviewer
+
+**Model:** opus
+**Min Tier:** STANDARD
+
+Code review and quality assurance
+
+**Capabilities:**
+- Code review
+- Best practices
+- Security review
+- Performance review
+
+---
+
+### @architect - Architect
+
+**Model:** opus
+**Min Tier:** STANDARD
+
+System design and architecture decisions
+
+**Capabilities:**
+- System design
+- ADRs
+- Trade-off analysis
+- Technology selection
+
+---
+
+### @tester - QA Tester
+
+**Model:** sonnet
+**Min Tier:** LITE
+
+Test planning and execution
+
+**Capabilities:**
+- Test planning
+- Test cases
+- Bug reports
+- Coverage analysis
+
+---
+
+## Thinking Framework (SDLC Pillar 0)
+
+### System Thinking — Iceberg Model
+
+Analyze problems at 4 layers, not just the visible event:
+
+| Layer | Question | Intervention |
+|-------|----------|-------------|
+| **Events** | What happened? | Reactive — fix symptom |
+| **Patterns** | What keeps happening? | Adaptive — add monitoring |
+| **Structures** | What system causes this? | Creative — redesign |
+| **Mental Models** | What beliefs allow this? | Transformative — change culture |
+
+### Design Thinking — 5 Phases
+
+Before building, follow: **Empathize → Define → Ideate → Prototype → Test**
+
+- Problem space (diverge then converge) before solution space
+- >70% success → iterate, 30-70% → dig deeper, <30% → pivot
+
+### Crisis-to-Pattern — 5-Step Pipeline
+
+When things break: **Diagnose → Create Policy → Automate → Enforce → Document**
+
+Every crisis becomes a reusable pattern. Use Iceberg Model at step 1.
+
+### Effort Compression (AI-Assisted)
+
+| Task Type | Human | AI+EndiorBot | Compression |
+|-----------|-------|-------------|-------------|
+| Boilerplate | 2 days | 15 min | 100x |
+| Tests | 1 day | 15 min | 50x |
+| Feature | 1 week | 30 min | 30x |
+| Bug fix | 4 hours | 15 min | 20x |
+
+When completeness costs minutes more than the shortcut — always choose complete.
+
+---
+
+## Usage
+
+### Invoking Agents
+
+```bash
+# Via EndiorBot CLI
+./endiorbot.mjs @pm "Create user story for login feature"
+./endiorbot.mjs @architect "Design payment gateway integration"
+./endiorbot.mjs @coder "Implement the login API endpoint"
+
+# Via Claude Code
+@pm create user story for login feature
+@architect design payment gateway integration
+```
+
+### Multi-Model Consultation
+
+```bash
+./endiorbot.mjs consult "Should we use PostgreSQL or MongoDB?"
+# Queries multiple models for consensus
+```
+
+### Agent Handoff
+
+Agents can delegate to other agents:
+```
+@pm → @architect (design needed)
+@architect → @coder (implementation)
+@coder → @reviewer (review needed)
+```
+
+---
+
+## SASE Integration (SE 3.0)
+
+### CRP - Consultation Resolution Process
+
+How AI seeks human approval for decisions:
+1. AI proposes action
+2. Human reviews (CEO/approver)
+3. Human confirms or rejects
+4. AI proceeds based on decision
+
+### MRP - Mentorship Resolution Process
+
+How AI learns from feedback:
+1. Human provides correction
+2. AI acknowledges learning
+3. AI applies learning to future tasks
+4. Continuous improvement loop
+
+### VCR - Vibecoding Critique Record
+
+Quality control for AI-generated code:
+- Track vibecoding index
+- Review AI suggestions
+- Document quality issues
+- Improve prompts based on feedback
+
+---
+
+## Agentic Maturity Level
+
+| Level | Name | Characteristic |
+|-------|------|----------------|
+| L0 | Tool-Assisted | AI as autocomplete |
+| L1 | Agent-Assisted | Structured handoff |
+| L2 | Structured Agentic | Full SASE workflow |
+| L3 | Lifecycle Agentic | Proactive agents |
+
+**Current Level:** L1 (Agent-Assisted)
+
+---
+
+*Generated by EndiorBot - SDLC Framework v6.3.0*

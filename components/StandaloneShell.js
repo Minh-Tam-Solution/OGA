@@ -6,15 +6,30 @@ import { ImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, MarketingStudio,
 import axios from 'axios';
 import ApiKeyModal from './ApiKeyModal';
 
+const _isLocal = process.env.NEXT_PUBLIC_LOCAL_MODE === 'true';
+
 const TABS = [
   { id: 'image',   label: 'Image Studio' },
-  { id: 'video',   label: 'Video Studio' },
-  { id: 'lipsync', label: 'Lip Sync' },
-  { id: 'cinema',  label: 'Cinema Studio' },
-  { id: 'marketing', label: 'Marketing Studio' },
-  { id: 'workflows', label: 'Workflows' },
-  { id: 'agents', label: 'Agents' },
+  { id: 'video',   label: 'Video Studio',     comingSoon: _isLocal },
+  { id: 'lipsync', label: 'Lip Sync',          comingSoon: _isLocal },
+  { id: 'cinema',  label: 'Cinema Studio',     comingSoon: _isLocal },
+  { id: 'marketing', label: 'Marketing Studio', comingSoon: _isLocal },
+  // Workflows and Agents hidden in local mode
+  ...(_isLocal ? [] : [
+    { id: 'workflows', label: 'Workflows' },
+    { id: 'agents', label: 'Agents' },
+  ]),
 ];
+
+function ComingSoon({ label }) {
+  return (
+    <div className="w-full h-full flex flex-col items-center justify-center bg-app-bg">
+      <div className="text-4xl mb-4">🚧</div>
+      <h2 className="text-xl font-bold text-white mb-2">{label}</h2>
+      <p className="text-white/40 text-sm">Coming Soon — this feature is planned for a future release.</p>
+    </div>
+  );
+}
 
 const STORAGE_KEY = 'muapi_key';
 
@@ -248,7 +263,7 @@ export default function StandaloneShell() {
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
               </svg>
             </div>
-            <span className="text-sm font-bold tracking-tight hidden sm:block">OpenGenerativeAI</span>
+            <span className="text-sm font-bold tracking-tight hidden sm:block">NQH Creative Studio</span>
           </div>
 
           {/* Center: Navigation */}
@@ -256,15 +271,21 @@ export default function StandaloneShell() {
             {TABS.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
+                onClick={() => !tab.comingSoon && handleTabChange(tab.id)}
+                disabled={tab.comingSoon}
                 className={`relative py-4 text-[13px] font-medium transition-all whitespace-nowrap px-1 ${
-                  activeTab === tab.id
-                    ? 'text-[#d9ff00]'
-                    : 'text-white/50 hover:text-white'
+                  tab.comingSoon
+                    ? 'text-white/25 cursor-not-allowed'
+                    : activeTab === tab.id
+                      ? 'text-[#d9ff00]'
+                      : 'text-white/50 hover:text-white'
                 }`}
               >
                 {tab.label}
-                {activeTab === tab.id && (
+                {tab.comingSoon && (
+                  <span className="ml-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-white/10 text-white/40 align-middle">SOON</span>
+                )}
+                {activeTab === tab.id && !tab.comingSoon && (
                   <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#d9ff00] rounded-full" />
                 )}
               </button>
@@ -300,10 +321,10 @@ export default function StandaloneShell() {
       {/* Studio Content */}
       <div className="flex-1 min-h-0 relative overflow-hidden">
         {activeTab === 'image'   && <ImageStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
-        {activeTab === 'video'   && <VideoStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
-        {activeTab === 'lipsync' && <LipSyncStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
-        {activeTab === 'cinema'  && <CinemaStudio  apiKey={apiKey} />}
-        {activeTab === 'marketing' && <MarketingStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
+        {activeTab === 'video'   && (_isLocal ? <ComingSoon label="Video Studio" /> : <VideoStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />)}
+        {activeTab === 'lipsync' && (_isLocal ? <ComingSoon label="Lip Sync" /> : <LipSyncStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />)}
+        {activeTab === 'cinema'  && (_isLocal ? <ComingSoon label="Cinema Studio" /> : <CinemaStudio  apiKey={apiKey} />)}
+        {activeTab === 'marketing' && (_isLocal ? <ComingSoon label="Marketing Studio" /> : <MarketingStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />)}
         {activeTab === 'workflows' && <WorkflowStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />}
         {activeTab === 'agents' && <AgentStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />}
       </div>

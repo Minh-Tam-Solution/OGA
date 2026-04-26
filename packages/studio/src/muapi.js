@@ -1,6 +1,12 @@
 import { getModelById, getVideoModelById, getI2IModelById, getI2VModelById, getV2VModelById, getLipSyncModelById } from './models.js';
 
-const BASE_URL = 'https://api.muapi.ai';
+function _isLocalMode() {
+    try { return process.env.NEXT_PUBLIC_LOCAL_MODE === 'true'; } catch { return false; }
+}
+
+const BASE_URL = _isLocalMode()
+    ? ''
+    : (typeof window !== 'undefined' && localStorage.getItem('local_server_url')) || 'https://api.muapi.ai';
 const PROXY_WF_BASE = '/api/workflow';
 
 async function pollForResult(requestId, key, maxAttempts = 900, interval = 2000) {

@@ -6,9 +6,27 @@ export async function POST(request) {
         
         // Extract the original S3 target URL we injected earlier
         const targetUrl = formData.get('x-proxy-target-url');
-        
+
         if (!targetUrl) {
             return NextResponse.json({ error: 'Missing proxy target URL' }, { status: 400 });
+        }
+
+        // SSRF protection: only allow S3 upload URLs
+        const ALLOWED_HOST_PATTERNS = [
+            /\.amazonaws\.com$/,
+            /\.s3\.[\w-]+\.amazonaws\.com$/,
+        ];
+        try {
+            const parsed = new URL(targetUrl);
+            if (parsed.protocol !== 'https:') {
+                return NextResponse.json({ error: 'Only HTTPS targets allowed' }, { status: 403 });
+            }
+            const isAllowed = ALLOWED_HOST_PATTERNS.some(p => p.test(parsed.hostname));
+            if (!isAllowed) {
+                return NextResponse.json({ error: 'Target URL not in allowlist' }, { status: 403 });
+            }
+        } catch {
+            return NextResponse.json({ error: 'Invalid target URL' }, { status: 400 });
         }
 
         // Reconstruct the FormData for S3 (excluding our internal proxy marker)

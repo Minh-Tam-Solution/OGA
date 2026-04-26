@@ -1,4 +1,11 @@
 export function AuthModal(onSuccess) {
+    // Skip auth modal in local mode — use dedicated bypass flag, never touch muapi_key
+    if (process.env.NEXT_PUBLIC_LOCAL_MODE === 'true') {
+        localStorage.setItem('muapi_local_bypass_active', 'true');
+        if (onSuccess) onSuccess();
+        return null;
+    }
+
     const overlay = document.createElement('div');
     overlay.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm px-6';
 

@@ -58,6 +58,11 @@ class LocalInferenceClient {
         ];
     }
 
+    // ── generateImage() alias — matches MuapiClient signature ─────────────
+    async generateImage(params) {
+        return this.generate(params);
+    }
+
     // ── Provider-aware generate ───────────────────────────────────────────
     async generate(params) {
         if (!isLocalAIAvailable()) throw new Error('Local AI only available in the desktop app.');

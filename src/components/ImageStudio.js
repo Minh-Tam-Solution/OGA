@@ -1,4 +1,5 @@
 import { muapi } from '../lib/muapi.js';
+import { isLocalMode } from '../lib/providerConfig.js';
 import {
     t2iModels, getAspectRatiosForModel, getResolutionsForModel, getQualityFieldForModel,
     i2iModels, getAspectRatiosForI2IModel, getResolutionsForI2IModel, getQualityFieldForI2IModel,
@@ -27,7 +28,7 @@ export function ImageStudio() {
     container.className = 'w-full h-full flex flex-col items-center justify-center bg-app-bg relative p-4 md:p-6 overflow-y-auto custom-scrollbar overflow-x-hidden';
 
     // --- State ---
-    const defaultModel = t2iModels[0];
+    const defaultModel = isLocalMode() ? (LOCAL_MODEL_CATALOG.filter(m => m.type !== 'video')[0] || t2iModels[0]) : t2iModels[0];
     let selectedModel = defaultModel.id;
     let selectedModelName = defaultModel.name;
     let selectedAr = defaultModel.inputs?.aspect_ratio?.default || '1:1';
@@ -39,7 +40,7 @@ export function ImageStudio() {
     // sd.cpp uses type='sd1'|'sdxl'|'z-image'; Wan2GP image models use type='image'.
     // Wan2GP video models (type='video') are hidden from ImageStudio.
     const LOCAL_IMAGE_MODELS = LOCAL_MODEL_CATALOG.filter(m => m.type !== 'video');
-    let useLocalModel = false;
+    let useLocalModel = isLocalMode() || false;
     let selectedLocalModel = LOCAL_IMAGE_MODELS[0]?.id || null;
     let localGenProgress = 0; // 0–1
 
@@ -195,9 +196,9 @@ export function ImageStudio() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="opacity-60 text-secondary"><path d="M6 2L3 6v15a2 2 0 002 2h14a2 2 0 002-2V6l-3-4H6z"/></svg>
     `, '720p', 'quality-btn', 'Set output quality');
 
-    // Local / API source toggle (only shown in Electron)
+    // Local / API source toggle (shown in Electron or when LOCAL_MODE env is set)
     let localToggleBtn = null;
-    if (isLocalAIAvailable()) {
+    if (isLocalAIAvailable() || isLocalMode()) {
         localToggleBtn = document.createElement('button');
         localToggleBtn.id = 'local-toggle-btn';
         localToggleBtn.className = 'flex items-center gap-1.5 px-3 py-2 rounded-xl transition-all border text-xs font-bold whitespace-nowrap';
@@ -1180,24 +1181,43 @@ export function ImageStudio() {
             progressWrap.classList.remove('hidden');
             progressWrap.classList.add('flex');
 
-            const unsub = localAI.onProgress(({ progress, status }) => {
-                const pct = Math.round((progress ?? 0) * 100);
-                if (progressFill) progressFill.style.width = `${pct}%`;
-                if (progressPct) progressPct.textContent = status === 'starting' ? 'Starting...' : `${pct}%`;
-                generateBtn.innerHTML = `<span class="animate-spin inline-block mr-2 text-black">◌</span> ${status === 'starting' ? '...' : pct + '%'}`;
-            });
+            let unsub = () => {};
+            if (isLocalAIAvailable()) {
+                unsub = localAI.onProgress(({ progress, status }) => {
+                    const pct = Math.round((progress ?? 0) * 100);
+                    if (progressFill) progressFill.style.width = `${pct}%`;
+                    if (progressPct) progressPct.textContent = status === 'starting' ? 'Starting...' : `${pct}%`;
+                    generateBtn.innerHTML = `<span class="animate-spin inline-block mr-2 text-black">◌</span> ${status === 'starting' ? '...' : pct + '%'}`;
+                });
+            }
 
             let hadError = false;
             try {
-                const res = await localAI.generate({
-                    model: selectedLocalModel,
-                    prompt,
-                    negative_prompt: negativePrompt || undefined,
-                    aspect_ratio: selectedAr,
-                    steps: steps,
-                    guidance_scale: guidanceScale,
-                    seed,
-                });
+                let res;
+                if (isLocalAIAvailable()) {
+                    // Electron IPC path — sd.cpp / Wan2GP via window.localAI
+                    res = await localAI.generate({
+                        model: selectedLocalModel,
+                        prompt,
+                        negative_prompt: negativePrompt || undefined,
+                        aspect_ratio: selectedAr,
+                        steps: steps,
+                        guidance_scale: guidanceScale,
+                        seed,
+                    });
+                } else {
+                    // Web local mode — HTTP to local server via middleware proxy
+                    const genParams = {
+                        model: lm.id,
+                        prompt,
+                        aspect_ratio: selectedAr,
+                    };
+                    if (negativePrompt) genParams.negative_prompt = negativePrompt;
+                    if (steps) genParams.steps = steps;
+                    if (guidanceScale) genParams.guidance_scale = guidanceScale;
+                    if (seed && seed !== -1) genParams.seed = seed;
+                    res = await muapi.generateImage(genParams);
+                }
                 unsub();
                 progressWrap.classList.replace('flex', 'hidden');
                 progressWrap.classList.add('hidden');
@@ -1223,8 +1243,8 @@ export function ImageStudio() {
                 console.error('[Local] generation error:', e);
                 hero.classList.remove('opacity-0', 'scale-95', '-translate-y-10', 'pointer-events-none');
                 console.error('[Local] full error:', e.message);
-                generateBtn.innerHTML = `Error: ${e.message.slice(0, 120)}`;
-                setTimeout(() => { generateBtn.innerHTML = `Generate ✨`; }, 6000);
+                generateBtn.textContent = `Error: ${e.message.slice(0, 120)}`;
+                setTimeout(() => { generateBtn.textContent = `Generate ✨`; }, 6000);
             } finally {
                 generateBtn.disabled = false;
                 if (!hadError) generateBtn.innerHTML = `Generate ✨`;
@@ -1233,8 +1253,8 @@ export function ImageStudio() {
         }
 
         // ── Remote API path ───────────────────────────────────────────────────
-        const apiKey = localStorage.getItem('muapi_key');
-        if (!apiKey) {
+        const hasAuth = localStorage.getItem('muapi_key') || localStorage.getItem('muapi_local_bypass_active');
+        if (!hasAuth && !isLocalMode()) {
             AuthModal(() => generateBtn.click());
             return;
         }
@@ -1303,7 +1323,7 @@ export function ImageStudio() {
             console.error(e);
             // Restore hero so the page doesn't look broken after a failed generation
             hero.classList.remove('opacity-0', 'scale-95', '-translate-y-10', 'pointer-events-none');
-            generateBtn.innerHTML = `Error: ${e.message.slice(0, 60)}`;
+            generateBtn.textContent = `Error: ${e.message.slice(0, 60)}`;
             setTimeout(() => {
                 generateBtn.innerHTML = `Generate ✨`;
             }, 4000);

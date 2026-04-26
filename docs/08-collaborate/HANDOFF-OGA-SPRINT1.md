@@ -215,4 +215,38 @@ endiorbot compliance check --tier STANDARD
 
 ---
 
+## 11. Sprint 1 — Definition of Done
+
+Sprint 1 is **DONE** when ALL of the following are verified:
+
+- [ ] `npm run build` exits with 0 errors
+- [ ] `npm run lint` exits with 0 errors
+- [ ] Network tab shows **0 requests** to `api.muapi.ai` in local mode
+- [ ] Image Studio → generate image → PNG displays (E2E local)
+- [ ] Header displays **"NQH Creative Studio"**
+- [ ] Page title / favicon updated
+- [ ] Video, LipSync, Cinema, Marketing tabs → "Coming Soon" badge
+- [ ] Workflows, Agents tabs → hidden from navigation
+- [ ] Model dropdown shows only local models (Flux Schnell)
+- [ ] AuthModal skipped in local mode
+- [ ] `.env.local.example` committed with documented variables
+- [ ] Code pushed to `github.com/Minh-Tam-Solution/OGA`
+
+**Approval:** @tester verifies checklist → @pm proposes G-Sprint → CTO approves.
+
+---
+
+## 12. Timeline
+
+| Milestone | Target Date | Owner |
+|-----------|-------------|-------|
+| Sprint 1 kick-off | 2026-04-26 | @pm |
+| Tasks 1.1–1.3 (foundation) | 2026-04-27 | @coder + @architect |
+| Tasks 1.4–1.5 (UI local mode) | 2026-04-28 | @coder |
+| Task 1.6 (integration test) | 2026-04-29 | @tester |
+| Task 1.7 (docs) + DoD verification | 2026-04-30 | @coder + @tester |
+| **Sprint 1 complete** | **2026-04-30** | **Team OGA** |
+
+---
+
 *NQH Creative Studio (OGA) | SDLC Framework v6.3.1 | Handoff Document — 2026-04-26*

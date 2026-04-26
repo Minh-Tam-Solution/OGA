@@ -36,3 +36,8 @@ out/
 .env
 .env.*
 !.env.example
+
+# Claude Code / EndiorBot
+.claude/
+.endiorbot/
+.sdlc-framework
