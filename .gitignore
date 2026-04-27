@@ -37,6 +37,9 @@ out/
 .env.*
 !.env.example
 
+# Python virtual env
+.venv/
+
 # Claude Code / EndiorBot
 .claude/
 .endiorbot/

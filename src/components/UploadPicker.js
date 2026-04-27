@@ -1,6 +1,17 @@
 import { muapi } from '../lib/muapi.js';
+import { isLocalMode } from '../lib/providerConfig.js';
 import { AuthModal } from './AuthModal.js';
 import { getUploadHistory, saveUpload, removeUpload, generateThumbnail } from '../lib/uploadHistory.js';
+
+/** Convert File to data URL (for local mode — no cloud upload) */
+function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
 
 /**
  * Creates a self-contained upload picker: a trigger button + history panel.
@@ -318,10 +329,12 @@ export function createUploadPicker({ anchorContainer, onSelect, onClear, maxImag
         const files = Array.from(e.target.files);
         if (!files.length) return;
 
-        const apiKey = localStorage.getItem('muapi_key');
-        if (!apiKey) {
-            AuthModal(() => fileInput.click());
-            return;
+        if (!isLocalMode()) {
+            const apiKey = localStorage.getItem('muapi_key');
+            if (!apiKey) {
+                AuthModal(() => fileInput.click());
+                return;
+            }
         }
 
         showSpinner();
@@ -330,8 +343,9 @@ export function createUploadPicker({ anchorContainer, onSelect, onClear, maxImag
             if (maxImages === 1) {
                 // Single mode: upload first file only, replace selection
                 const file = files[0];
+                const uploadFn = isLocalMode() ? fileToDataUrl : (f) => muapi.uploadFile(f);
                 const [uploadedUrl, thumbnail] = await Promise.all([
-                    muapi.uploadFile(file),
+                    uploadFn(file),
                     generateThumbnail(file)
                 ]);
                 const entry = { id: Date.now().toString(), name: file.name, uploadedUrl, thumbnail, timestamp: new Date().toISOString() };
@@ -345,9 +359,10 @@ export function createUploadPicker({ anchorContainer, onSelect, onClear, maxImag
                 const toUpload = files.slice(0, Math.max(slots, 1));
 
                 // Upload all in parallel
+                const uploadFn = isLocalMode() ? fileToDataUrl : (f) => muapi.uploadFile(f);
                 const results = await Promise.all(toUpload.map(async (file) => {
                     const [uploadedUrl, thumbnail] = await Promise.all([
-                        muapi.uploadFile(file),
+                        uploadFn(file),
                         generateThumbnail(file)
                     ]);
                     return { id: Date.now().toString() + Math.random(), name: file.name, uploadedUrl, thumbnail, timestamp: new Date().toISOString() };

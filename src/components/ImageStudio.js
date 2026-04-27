@@ -10,7 +10,7 @@ import { LOCAL_MODEL_CATALOG, getLocalModelById } from '../lib/localModels.js';
 import { ENHANCE_TAGS, QUICK_PROMPTS } from '../lib/promptUtils.js';
 import { AuthModal } from './AuthModal.js';
 import { createUploadPicker } from './UploadPicker.js';
-import { savePendingJob, removePendingJob, getPendingJobs } from '../lib/pendingJobs.js';
+import { savePendingJob, removePendingJob, getPendingJobs, getJobElapsed } from '../lib/pendingJobs.js';
 
 function createInlineInstructions(type) {
     const el = document.createElement('div');
@@ -1085,7 +1085,9 @@ export function ImageStudio() {
 
         const banner = document.createElement('div');
         banner.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-[200] bg-[#111] border border-white/10 text-white text-sm px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3';
-        banner.innerHTML = `<span class="animate-spin text-primary">◌</span> <span class="banner-text">Resuming ${pending.length} pending generation${pending.length > 1 ? 's' : ''}…</span>`;
+        const elapsed0 = getJobElapsed(pending[0].requestId);
+        const elapsedStr = elapsed0 > 0 ? ` (${elapsed0}s ago)` : '';
+        banner.innerHTML = `<span class="animate-spin text-primary">◌</span> <span class="banner-text">Resuming ${pending.length} pending generation${pending.length > 1 ? 's' : ''}${elapsedStr}…</span>`;
         document.body.appendChild(banner);
 
         let remaining = pending.length;
@@ -1216,6 +1218,11 @@ export function ImageStudio() {
                     if (steps) genParams.steps = steps;
                     if (guidanceScale) genParams.guidance_scale = guidanceScale;
                     if (seed && seed !== -1) genParams.seed = seed;
+                    // img2img: pass uploaded image (data URL or blob)
+                    if (imageMode && uploadedImageUrls.length > 0) {
+                        genParams.image_url = uploadedImageUrls[0];
+                        genParams.strength = referenceStrength / 100;
+                    }
                     res = await muapi.generateImage(genParams);
                 }
                 unsub();

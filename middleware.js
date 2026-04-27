@@ -1,12 +1,51 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 
 // Local MLX server URL — set LOCAL_API_URL env var to use local image gen
 const LOCAL_API_URL = process.env.LOCAL_API_URL || '';
 
+// PIN-based access control — set ACCESS_PIN env var to enable
+const ACCESS_PIN = process.env.ACCESS_PIN || '';
+const SESSION_SECRET = process.env.SESSION_SECRET || process.env.ACCESS_PIN || 'nqh-fallback';
+
+// Paths excluded from PIN gate (unauthenticated)
+const AUTH_EXCLUDED = ['/api/health', '/api/auth/verify', '/auth', '/_next', '/favicon.ico'];
+
+function isAuthExcluded(pathname) {
+    return AUTH_EXCLUDED.some(p => pathname.startsWith(p));
+}
+
+/** C1 fix: HMAC-verify the session token (must match signing logic in verify/route.js) */
+function isValidSession(token) {
+    if (!token || !token.includes('.')) return false;
+    const dotIndex = token.lastIndexOf('.');
+    const payload = token.slice(0, dotIndex);
+    const hmac = crypto.createHmac('sha256', SESSION_SECRET);
+    hmac.update(payload);
+    const expected = `${payload}.${hmac.digest('hex')}`;
+    try {
+        return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected));
+    } catch {
+        return false;
+    }
+}
+
 export function middleware(request) {
     const url = request.nextUrl;
 
-    // Catch requests to /api/workflow, /api/app, and /api/v1
+    // ── PIN gate (when ACCESS_PIN is configured) ─────────────────────────
+    if (ACCESS_PIN && !isAuthExcluded(url.pathname)) {
+        const session = request.cookies.get('nqh_session')?.value;
+        if (!session || !isValidSession(session)) {
+            // Redirect browser requests to /auth; block API calls with 401
+            if (url.pathname.startsWith('/api/')) {
+                return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+            }
+            return NextResponse.redirect(new URL('/auth', request.url));
+        }
+    }
+
+    // ── API proxy routing ────────────────────────────────────────────────
     const isMuApi = url.pathname.startsWith('/api/workflow') ||
                     url.pathname.startsWith('/api/app') ||
                     url.pathname.startsWith('/api/v1');
@@ -30,11 +69,9 @@ export function middleware(request) {
     return NextResponse.next();
 }
 
-// Match the paths we want to proxy
+// Match all paths for PIN gate + API proxy
 export const config = {
     matcher: [
-        '/api/workflow/:path*', 
-        '/api/app/:path*',
-        '/api/v1/:path*'
+        '/((?!_next/static|_next/image|favicon.ico).*)',
     ],
 };

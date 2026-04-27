@@ -12,3 +12,12 @@ export function getProvider() {
 
 /** Convenience boolean — avoids repetitive string comparison at call sites. */
 export const isLocalMode = () => getProvider() === 'local';
+
+/**
+ * Wan2GP video engine configuration.
+ * enabled: false until Sprint 3 activates it.
+ */
+export const wan2gpConfig = {
+    enabled: false,
+    url: process.env.NEXT_PUBLIC_WAN2GP_URL || 'http://localhost:7860',
+};
