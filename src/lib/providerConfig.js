@@ -18,6 +18,6 @@ export const isLocalMode = () => getProvider() === 'local';
  * enabled: false until Sprint 3 activates it.
  */
 export const wan2gpConfig = {
-    enabled: false,
+    enabled: process.env.NEXT_PUBLIC_WAN2GP_ENABLED === 'true',
     url: process.env.NEXT_PUBLIC_WAN2GP_URL || 'http://localhost:7860',
 };

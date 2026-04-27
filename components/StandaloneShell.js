@@ -7,10 +7,11 @@ import axios from 'axios';
 import ApiKeyModal from './ApiKeyModal';
 
 const _isLocal = process.env.NEXT_PUBLIC_LOCAL_MODE === 'true';
+const _wan2gpEnabled = process.env.NEXT_PUBLIC_WAN2GP_ENABLED === 'true';
 
 const TABS = [
   { id: 'image',   label: 'Image Studio' },
-  { id: 'video',   label: 'Video Studio',     comingSoon: _isLocal },
+  { id: 'video',   label: 'Video Studio',     comingSoon: _isLocal && !_wan2gpEnabled },
   { id: 'lipsync', label: 'Lip Sync',          comingSoon: _isLocal },
   { id: 'cinema',  label: 'Cinema Studio',     comingSoon: _isLocal },
   { id: 'marketing', label: 'Marketing Studio', comingSoon: _isLocal },
@@ -321,7 +322,7 @@ export default function StandaloneShell() {
       {/* Studio Content */}
       <div className="flex-1 min-h-0 relative overflow-hidden">
         {activeTab === 'image'   && <ImageStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
-        {activeTab === 'video'   && (_isLocal ? <ComingSoon label="Video Studio" /> : <VideoStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />)}
+        {activeTab === 'video'   && (_isLocal && !_wan2gpEnabled ? <ComingSoon label="Video Studio" /> : <VideoStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />)}
         {activeTab === 'lipsync' && (_isLocal ? <ComingSoon label="Lip Sync" /> : <LipSyncStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />)}
         {activeTab === 'cinema'  && (_isLocal ? <ComingSoon label="Cinema Studio" /> : <CinemaStudio  apiKey={apiKey} />)}
         {activeTab === 'marketing' && (_isLocal ? <ComingSoon label="Marketing Studio" /> : <MarketingStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />)}
