@@ -118,6 +118,13 @@ def load_diffusers_pipeline(model_config: dict):
     global pipe, current_model
     import torch
 
+    # SDNQ quantizer must be registered before from_pretrained can parse SDNQ models
+    try:
+        import sdnq  # noqa: F401 — registers 'sdnq' quantization type with diffusers
+        log.info("SDNQ quantizer registered")
+    except ImportError:
+        log.warning("sdnq not installed — SDNQ-quantized models will fail to load")
+
     pipeline_name = model_config["pipeline"]
     model_id = model_config["id"]
     backup_id = model_config.get("backup_id")
