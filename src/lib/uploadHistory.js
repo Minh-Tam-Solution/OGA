@@ -10,9 +10,18 @@ export function getUploadHistory() {
 }
 
 export function saveUpload({ id, name, uploadedUrl, thumbnail, timestamp }) {
-    const history = getUploadHistory();
-    history.unshift({ id, name, uploadedUrl, thumbnail, timestamp });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(history.slice(0, MAX_UPLOADS)));
+    try {
+        const history = getUploadHistory();
+        // Don't store full data URLs in history — they blow localStorage quota
+        const safeUrl = uploadedUrl?.startsWith('data:') ? null : uploadedUrl;
+        history.unshift({ id, name, uploadedUrl: safeUrl, thumbnail, timestamp });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(history.slice(0, MAX_UPLOADS)));
+    } catch (e) {
+        // localStorage full — clear old uploads and retry
+        if (e?.name === 'QuotaExceededError') {
+            localStorage.removeItem(STORAGE_KEY);
+        }
+    }
 }
 
 export function removeUpload(id) {

@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import crypto from 'crypto';
 
 // Local MLX server URL — set LOCAL_API_URL env var to use local image gen
 const LOCAL_API_URL = process.env.LOCAL_API_URL || '';
@@ -15,28 +14,33 @@ function isAuthExcluded(pathname) {
     return AUTH_EXCLUDED.some(p => pathname.startsWith(p));
 }
 
-/** C1 fix: HMAC-verify the session token (must match signing logic in verify/route.js) */
-function isValidSession(token) {
+/** HMAC-verify session token using Web Crypto API (Edge Runtime compatible) */
+async function isValidSession(token) {
     if (!token || !token.includes('.')) return false;
-    const dotIndex = token.lastIndexOf('.');
-    const payload = token.slice(0, dotIndex);
-    const hmac = crypto.createHmac('sha256', SESSION_SECRET);
-    hmac.update(payload);
-    const expected = `${payload}.${hmac.digest('hex')}`;
     try {
-        return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected));
+        const dotIndex = token.lastIndexOf('.');
+        const payload = token.slice(0, dotIndex);
+        const sig = token.slice(dotIndex + 1);
+        const encoder = new TextEncoder();
+        const key = await crypto.subtle.importKey(
+            'raw', encoder.encode(SESSION_SECRET),
+            { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+        );
+        const sigBytes = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
+        const expected = Array.from(new Uint8Array(sigBytes)).map(b => b.toString(16).padStart(2, '0')).join('');
+        return sig === expected;
     } catch {
         return false;
     }
 }
 
-export function middleware(request) {
+export async function middleware(request) {
     const url = request.nextUrl;
 
     // ── PIN gate (when ACCESS_PIN is configured) ─────────────────────────
     if (ACCESS_PIN && !isAuthExcluded(url.pathname)) {
         const session = request.cookies.get('nqh_session')?.value;
-        if (!session || !isValidSession(session)) {
+        if (!session || !(await isValidSession(session))) {
             // Redirect browser requests to /auth; block API calls with 401
             if (url.pathname.startsWith('/api/')) {
                 return NextResponse.json({ error: 'Authentication required' }, { status: 401 });

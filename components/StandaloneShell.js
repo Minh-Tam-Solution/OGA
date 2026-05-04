@@ -1,12 +1,29 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, MarketingStudio, WorkflowStudio, AgentStudio, getUserBalance } from 'studio';
+import { ImageStudio as CloudImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, MarketingStudio, WorkflowStudio, AgentStudio, getUserBalance } from 'studio';
+import { ImageStudio as createLocalImageStudio } from '../src/components/ImageStudio.js';
 import axios from 'axios';
 import ApiKeyModal from './ApiKeyModal';
 
 const _isLocal = process.env.NEXT_PUBLIC_LOCAL_MODE === 'true';
+
+// Wrap vanilla DOM ImageStudio into React component for local mode
+function LocalImageStudioWrapper() {
+  const containerRef = useRef(null);
+  const mountedRef = useRef(false);
+  useLayoutEffect(() => {
+    if (containerRef.current && !mountedRef.current) {
+      mountedRef.current = true;
+      const el = createLocalImageStudio();
+      containerRef.current.appendChild(el);
+    }
+  }, []);
+  return <div ref={containerRef} className="w-full h-full" />;
+}
+
+const ImageStudio = _isLocal ? LocalImageStudioWrapper : CloudImageStudio;
 const _wan2gpEnabled = process.env.NEXT_PUBLIC_WAN2GP_ENABLED === 'true';
 
 const TABS = [
@@ -225,7 +242,7 @@ export default function StandaloneShell() {
     </div>
   );
 
-  if (!apiKey) {
+  if (!apiKey && !_isLocal) {
     return <ApiKeyModal onSave={handleKeySave} />;
   }
 
@@ -345,7 +362,7 @@ export default function StandaloneShell() {
                    Active API Key
                 </label>
                 <div className="text-[13px] font-mono text-white/80">
-                  {apiKey.slice(0, 8)}••••••••••••••••
+                  {apiKey ? `${apiKey.slice(0, 8)}••••••••••••••••` : _isLocal ? 'Local mode — no API key needed' : 'Not set'}
                 </div>
               </div>
             </div>

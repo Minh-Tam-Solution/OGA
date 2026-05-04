@@ -40,11 +40,28 @@ app.add_middleware(
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
-MFLUX_MODEL = os.environ.get("MFLUX_MODEL", "schnell")
-MFLUX_QUANTIZE = os.environ.get("MFLUX_QUANTIZE", "8")
+MFLUX_DEFAULT_MODEL = os.environ.get("MFLUX_MODEL", "schnell")
+MFLUX_QUANTIZE = os.environ.get("MFLUX_QUANTIZE", "4")
 MFLUX_STEPS = int(os.environ.get("MFLUX_STEPS", "4"))
 OUTPUT_DIR = Path(tempfile.gettempdir()) / "flux-output"
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+# Model registry: frontend model ID → mflux --model flag + recommended settings
+# RAM estimates are for M4 Pro 24GB with Q4 quantize
+MFLUX_MODELS = {
+    "flux-schnell":       {"model": "schnell",         "steps": 4,  "ram_gb": 6,  "label": "Flux Schnell (fast, Q4 ~6GB)"},
+    "flux-dev":           {"model": "dev",             "steps": 28, "ram_gb": 6,  "label": "Flux Dev (quality, Q4 ~6GB)"},
+    "flux2-klein-4b":     {"model": "flux2-klein-4b",  "steps": 8,  "ram_gb": 3,  "label": "Flux2 Klein 4B (lightweight, ~3GB)"},
+    "flux2-klein-9b":     {"model": "flux2-klein-9b",  "steps": 8,  "ram_gb": 5,  "label": "Flux2 Klein 9B (~5GB)"},
+    "fibo-lite":          {"model": "fibo-lite",       "steps": 8,  "ram_gb": 4,  "label": "Fibo Lite (~4GB)"},
+    "z-image-turbo":      {"model": "schnell",         "steps": 4,  "ram_gb": 6,  "label": "Z-Image Turbo (→ Schnell)"},
+    "z-image-base":       {"model": "schnell",         "steps": 8,  "ram_gb": 6,  "label": "Z-Image Base (→ Schnell 8-step)"},
+    "dreamshaper-8":      {"model": "schnell",         "steps": 4,  "ram_gb": 6,  "label": "Dreamshaper 8 (→ Schnell)"},
+}
+
+def resolve_model(frontend_id: str) -> dict:
+    """Resolve frontend model ID to mflux config. Falls back to default."""
+    return MFLUX_MODELS.get(frontend_id, {"model": MFLUX_DEFAULT_MODEL, "steps": MFLUX_STEPS, "ram_gb": 6})
 
 
 # ─── Models ───────────────────────────────────────────────────────────────────
@@ -89,15 +106,20 @@ def ar_to_size(ar: str | None) -> tuple[int, int]:
 
 
 async def generate_image(prompt: str, width: int, height: int,
-                         steps: int | None = None, seed: int | None = None) -> bytes:
+                         steps: int | None = None, seed: int | None = None,
+                         model: str | None = None) -> bytes:
     """Run mflux-generate and return PNG bytes."""
+    resolved = resolve_model(model or "")
+    mflux_model = resolved["model"]
+    mflux_steps = steps or resolved.get("steps", MFLUX_STEPS)
+
     output_path = OUTPUT_DIR / f"{uuid.uuid4().hex}.png"
 
     cmd = [
         "mflux-generate",
-        "--model", MFLUX_MODEL,
+        "--model", mflux_model,
         "--prompt", prompt,
-        "--steps", str(steps or MFLUX_STEPS),
+        "--steps", str(mflux_steps),
         "--width", str(width),
         "--height", str(height),
         "--quantize", MFLUX_QUANTIZE,
@@ -128,7 +150,7 @@ async def generate_image(prompt: str, width: int, height: int,
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": MFLUX_MODEL, "quantize": MFLUX_QUANTIZE}
+    return {"status": "ok", "model": MFLUX_DEFAULT_MODEL, "quantize": MFLUX_QUANTIZE}
 
 
 @app.get("/v1/models")
@@ -137,11 +159,14 @@ async def list_models():
         "object": "list",
         "data": [
             {
-                "id": "flux-schnell",
+                "id": model_id,
                 "object": "model",
                 "created": int(time.time()),
                 "owned_by": "local-mlx",
+                "label": info["label"],
+                "ram_gb": info["ram_gb"],
             }
+            for model_id, info in MFLUX_MODELS.items()
         ],
     }
 
@@ -181,7 +206,7 @@ async def muapi_generate(model_endpoint: str, req: MuapiRequest):
     request_id = uuid.uuid4().hex
 
     start = time.time()
-    img_bytes = await generate_image(req.prompt, width, height, seed=req.seed)
+    img_bytes = await generate_image(req.prompt, width, height, seed=req.seed, model=model_endpoint)
     elapsed = time.time() - start
 
     # Save for polling endpoint
@@ -227,7 +252,8 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", "8000"))
     print(f"\n🎨 Local Flux Server starting on http://localhost:{port}")
-    print(f"   Model: {MFLUX_MODEL} (quantize {MFLUX_QUANTIZE}, {MFLUX_STEPS} steps)")
+    print(f"   Default model: {MFLUX_DEFAULT_MODEL} (quantize {MFLUX_QUANTIZE}, {MFLUX_STEPS} steps)")
+    print(f"   Available models: {', '.join(MFLUX_MODELS.keys())}")
     print(f"   OpenAI: POST /v1/images/generations")
     print(f"   Muapi:  POST /api/v1/{{model}}")
     print()
