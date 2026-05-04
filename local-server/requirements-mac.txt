@@ -1,0 +1,11 @@
+# NQH Creative Studio — Python deps for macOS Apple Silicon
+# Pinned from ZPix (CEO tested, no OOM on M4 Pro 24GB)
+# SDNQ uint4 kernels are CUDA-only — inert on MPS (guarded in server.py)
+
+torch==2.10.0
+diffusers @ https://github.com/huggingface/diffusers/archive/b757035df6fe080b56a672c4000e458bb442821a.zip
+peft==0.18.1
+sdnq==0.1.6
+platformdirs==4.9.4
+fastapi
+uvicorn
