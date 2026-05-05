@@ -1,0 +1,22 @@
+[
+    {
+        "id": "Disty0/Z-Image-Turbo-SDNQ-uint4-svd-r32",
+        "backup_id": "SamuelTallet/Z-Image-Turbo-SDNQ-uint4-svd-r32",
+        "frontend_ids": ["z-image-turbo", "z-image-base", "flux-schnell", "dreamshaper-8"],
+        "name": "Z-Image Turbo",
+        "pipeline": "ZImagePipeline",
+        "default": {"steps": 8, "cfg": 0.0},
+        "features": ["text-to-image"],
+        "ram_gb": 6
+    },
+    {
+        "id": "Disty0/FLUX.2-klein-4B-SDNQ-4bit-dynamic",
+        "backup_id": "SamuelTallet/FLUX.2-klein-4B-SDNQ-4bit-dynamic",
+        "frontend_ids": ["flux2-klein-4b"],
+        "name": "FLUX.2 Klein 4B",
+        "pipeline": "Flux2KleinPipeline",
+        "default": {"steps": 4, "cfg": 1.0},
+        "features": ["text-to-image", "image-to-image"],
+        "ram_gb": 4
+    }
+]

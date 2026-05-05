@@ -56,16 +56,12 @@ export async function middleware(request) {
 
     if (isMuApi) {
         if (url.pathname.startsWith('/api/v1')) {
-            // Route to local MLX server or Muapi cloud
-            const backend = LOCAL_API_URL || 'https://api.muapi.ai';
-
-            // Local server returns results synchronously — skip polling endpoint
-            const isPollingPath = url.pathname.match(/^\/api\/v1\/predictions\/[^/]+\/result$/);
-            if (LOCAL_API_URL && isPollingPath) {
+            if (LOCAL_API_URL) {
+                // Local mode: let Next.js API route handle the proxy (no Edge timeout issues)
                 return NextResponse.next();
             }
-
-            const targetUrl = new URL(url.pathname + url.search, backend);
+            // Cloud mode: rewrite to Muapi.ai
+            const targetUrl = new URL(url.pathname + url.search, 'https://api.muapi.ai');
             return NextResponse.rewrite(targetUrl);
         }
     }
