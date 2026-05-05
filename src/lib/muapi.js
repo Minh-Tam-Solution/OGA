@@ -101,21 +101,27 @@ export class MuapiClient {
             const submitData = await response.json();
             _log('[Muapi] Submit Response:', submitData);
 
-            // Extract request_id for polling
+            // If response already contains completed result (local Diffusers server),
+            // return immediately — no polling needed
+            const status = submitData.status?.toLowerCase();
+            if (status === 'completed' || status === 'succeeded' || status === 'success') {
+                const imageUrl = submitData.outputs?.[0] || submitData.url || submitData.output?.url;
+                _log('[Muapi] Direct result (no poll):', imageUrl?.slice(0, 60));
+                return { ...submitData, url: imageUrl };
+            }
+
+            // Extract request_id for polling (cloud async path)
             const requestId = submitData.request_id || submitData.id;
             if (!requestId) {
-                // Some endpoints return the result directly
                 return submitData;
             }
 
-            // Notify caller of requestId so they can persist it before polling begins
             if (params.onRequestId) params.onRequestId(requestId);
 
             // Step 2: Poll for results
             _log('[Muapi] Polling for results, request_id:', requestId);
             const result = await this.pollForResult(requestId, key);
 
-            // Normalize: extract image URL from outputs array
             const imageUrl = result.outputs?.[0] || result.url || result.output?.url;
             _log('[Muapi] Image URL:', imageUrl);
             return { ...result, url: imageUrl };
