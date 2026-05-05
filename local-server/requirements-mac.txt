@@ -9,3 +9,5 @@ sdnq==0.1.6
 platformdirs==4.9.4
 fastapi
 uvicorn
+rembg[cpu]==2.0.57
+psutil

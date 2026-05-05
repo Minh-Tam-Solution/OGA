@@ -584,6 +584,20 @@ export async function handleServerSideProxy(prefix, request, params, apiKey) {
     }
 }
 
+export async function removeBackground(apiKey, imageBase64) {
+    const url = `${BASE_URL}/api/v1/remove-bg`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+        body: JSON.stringify({ image: imageBase64 })
+    });
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Remove background failed: ${response.status} - ${errText.slice(0, 100)}`);
+    }
+    return await response.json();
+}
+
 export async function calculateDynamicCost(apiKey, taskName, payload) {
     const response = await fetch(`${BASE_URL}/api/v1/app/calculate_dynamic_cost`, {
         method: 'POST',

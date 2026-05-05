@@ -63,6 +63,12 @@ memory_baseline_mb = 0  # MPS memory before any pipeline loaded
 _gen_lock = asyncio.Lock()
 _swap_lock = asyncio.Lock()
 
+# RMBG serialisation (TS-004): one CPU-bound operation at a time
+_rembg_lock = asyncio.Lock()
+
+# RMBG session (always-resident utility)
+_rembg_session = None
+
 # Observability
 last_peak_ram = 0
 last_gen_latency = 0.0
@@ -90,6 +96,9 @@ class ImageRequest(BaseModel):
 class SwapRequest(BaseModel):
     model: str  # frontend_id from models.json
 
+class RemoveBgRequest(BaseModel):
+    image: str  # base64 data URL
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -111,6 +120,14 @@ def resolve_model_config(frontend_id: str) -> dict | None:
             return m
     return MODEL_REGISTRY[0] if MODEL_REGISTRY else None
 
+
+def resolve_model_config_strict(frontend_id: str) -> dict | None:
+    """Strict lookup: no fallback to default model. Used by swap endpoint."""
+    for m in MODEL_REGISTRY:
+        if frontend_id in m.get("frontend_ids", []):
+            return m
+    return None
+
 def get_mps_memory() -> int:
     """Return MPS allocated memory in MB."""
     try:
@@ -125,6 +142,37 @@ def image_to_base64(image) -> str:
     buf = io.BytesIO()
     image.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode()
+
+
+def is_ram_over_cap() -> bool:
+    """Check if system RAM usage exceeds 85% cap."""
+    try:
+        import psutil
+        return psutil.virtual_memory().percent > 85.0
+    except ImportError:
+        return False
+
+
+def get_process_rss_mb() -> int:
+    """Get current process RSS in MB."""
+    try:
+        import psutil
+        return round(psutil.Process().memory_info().rss / 1024 / 1024)
+    except ImportError:
+        return 0
+
+
+def init_rembg():
+    """Initialize rembg u2net session. Called once at startup."""
+    global _rembg_session
+    try:
+        from rembg import new_session
+        log.info("Loading RMBG (u2net) utility model...")
+        _rembg_session = new_session("u2net")
+        log.info("RMBG ready (~1-2GB resident)")
+    except Exception as e:
+        log.warning(f"RMBG initialization failed (rembg not installed?): {e}")
+        _rembg_session = None
 
 
 # ─── Pipeline Lifecycle (ADR-003 + TS-003) ────────────────────────────────────
@@ -214,9 +262,6 @@ def load_pipeline(model_config: dict):
 
 def swap_pipeline(model_config: dict):
     """Unload current pipeline, load new one. Full swap cycle."""
-    if current_model and current_model.get("id") == model_config.get("id"):
-        log.info(f"Model already loaded: {model_config['name']}, skipping swap")
-        return
     unload_pipeline()
     load_pipeline(model_config)
 
@@ -228,13 +273,6 @@ async def diffusers_generate(prompt: str, width: int, height: int,
                              cfg: float | None = None, image=None) -> dict:
     global last_peak_ram, last_gen_latency, pipeline_state
     import torch
-
-    if pipeline_state == PipelineState.LOADING:
-        raise HTTPException(503, "Pipeline loading, please wait")
-    if pipeline_state != PipelineState.READY:
-        raise HTTPException(503, f"Pipeline not ready (state: {pipeline_state})")
-    if pipe is None:
-        raise HTTPException(503, "No pipeline loaded")
 
     model_cfg = current_model or {}
     defaults = model_cfg.get("default", {})
@@ -256,11 +294,17 @@ async def diffusers_generate(prompt: str, width: int, height: int,
         elif isinstance(image, (str, Path)):
             pipe_kwargs["image"] = [PILImage.open(image)]
 
-    # Dual lock: acquire _swap_lock read-side (non-exclusive check) + _gen_lock exclusive
-    if _swap_lock.locked():
-        raise HTTPException(503, "Pipeline swap in progress, try again shortly")
-
     async with _gen_lock:
+        # Race-safe checks: state can only change while we hold _gen_lock or _swap_lock
+        if _swap_lock.locked():
+            raise HTTPException(503, "Pipeline swap in progress, try again shortly")
+        if pipeline_state == PipelineState.LOADING:
+            raise HTTPException(503, "Pipeline loading, please wait")
+        if pipeline_state != PipelineState.READY:
+            raise HTTPException(503, f"Pipeline not ready (state: {pipeline_state})")
+        if pipe is None:
+            raise HTTPException(503, "No pipeline loaded")
+
         pipeline_state = PipelineState.GENERATING
         start = time.time()
         mem_before = get_mps_memory()
@@ -345,6 +389,10 @@ async def health():
         "memory_baseline_mb": memory_baseline_mb,
         "mps_current_mb": get_mps_memory(),
         "last_gen_latency_s": round(last_gen_latency, 1),
+        "utilities": {
+            "rembg": _rembg_session is not None,
+        },
+        "process_rss_mb": get_process_rss_mb(),
     }
 
 @app.get("/v1/models")
@@ -379,7 +427,7 @@ async def swap_model_endpoint(req: SwapRequest):
     if INFERENCE_ENGINE != "diffusers":
         raise HTTPException(400, "Hot-swap only available in diffusers engine mode")
 
-    model_config = resolve_model_config(req.model)
+    model_config = resolve_model_config_strict(req.model)
     if not model_config:
         raise HTTPException(400, f"Unknown model: {req.model}")
 
@@ -387,24 +435,88 @@ async def swap_model_endpoint(req: SwapRequest):
     if model_type not in ("diffusers", "custom"):
         raise HTTPException(400, f"Cannot swap model_type={model_type}. Only diffusers/custom supported.")
 
-    if pipeline_state == PipelineState.GENERATING:
-        raise HTTPException(409, "Cannot swap while generating. Try again after current generation completes.")
-    if pipeline_state == PipelineState.LOADING:
-        raise HTTPException(503, "Another swap already in progress")
+    # Check if already loaded
+    if current_model and current_model.get("id") == model_config.get("id"):
+        raise HTTPException(400, {"error": "Model already loaded", "model": model_config["name"]})
 
     async with _swap_lock:
+        if _gen_lock.locked():
+            raise HTTPException(409, "Cannot swap while generating. Try again after current generation completes.")
+        if pipeline_state == PipelineState.GENERATING:
+            raise HTTPException(409, "Cannot swap while generating. Try again after current generation completes.")
+        if pipeline_state == PipelineState.LOADING:
+            raise HTTPException(503, "Another swap already in progress")
+
+        if is_ram_over_cap():
+            raise HTTPException(503, {"error": "Server RAM over 85% cap, swap blocked"}, headers={"Retry-After": "30"})
+
+        previous_name = current_model["name"] if current_model else None
         mem_before = get_mps_memory()
         start = time.time()
         await asyncio.to_thread(swap_pipeline, model_config)
         elapsed = time.time() - start
         mem_after = get_mps_memory()
+        ram_delta = mem_after - mem_before
 
     return {
-        "status": "ok",
-        "model": model_config["name"],
-        "swap_time_s": round(elapsed, 1),
-        "memory_before_mb": mem_before,
-        "memory_after_mb": mem_after,
+        "status": "swapped",
+        "previous_model": previous_name,
+        "current_model": model_config["name"],
+        "swap_time_seconds": round(elapsed, 1),
+        "ram_after_mb": mem_after,
+        "ram_delta_mb": ram_delta,
+    }
+
+@app.post("/api/v1/remove-bg")
+async def remove_bg(req: RemoveBgRequest):
+    """Background removal utility (TS-004). Always-resident, no pipeline swap."""
+    if not req.image or not req.image.startswith("data:image"):
+        raise HTTPException(400, {"error": "Invalid image data"})
+
+    try:
+        header, b64data = req.image.split(",", 1)
+        img_bytes = base64.b64decode(b64data)
+        if not img_bytes:
+            raise ValueError("Empty image after base64 decode")
+    except Exception:
+        raise HTTPException(400, {"error": "Invalid base64 encoding"})
+
+    size_mb = len(img_bytes) / (1024 * 1024)
+    if size_mb > 10:
+        raise HTTPException(413, {"error": "Image too large (max 10MB)", "size_mb": round(size_mb, 1)})
+
+    if is_ram_over_cap():
+        raise HTTPException(503, {"error": "Server overloaded, try again later"}, headers={"Retry-After": "10"})
+
+    if _rembg_session is None:
+        raise HTTPException(503, {"error": "RMBG utility not available"})
+
+    async with _rembg_lock:
+        start = time.time()
+        try:
+            from rembg import remove
+            result_bytes = await asyncio.to_thread(remove, img_bytes, session=_rembg_session)
+        except Exception as e:
+            log.error(f"RMBG failed: {e}")
+            raise HTTPException(500, {"error": f"Background removal failed: {str(e)}"})
+
+    elapsed = time.time() - start
+
+    from PIL import Image as PILImage
+    img = PILImage.open(io.BytesIO(img_bytes))
+    input_size = f"{img.width}x{img.height}"
+    output_b64 = base64.b64encode(result_bytes).decode()
+
+    return {
+        "status": "completed",
+        "output": f"data:image/png;base64,{output_b64}",
+        "_meta": {
+            "model": "RMBG (u2net)",
+            "input_size": input_size,
+            "output_format": "PNG (RGBA)",
+            "elapsed_seconds": round(elapsed, 1),
+            "ram_mb": get_process_rss_mb(),
+        },
     }
 
 @app.post("/api/v1/{model_endpoint:path}")
@@ -449,6 +561,9 @@ if __name__ == "__main__":
     # Record memory baseline before loading any pipeline
     memory_baseline_mb = get_mps_memory()
     print(f"   Memory baseline: {memory_baseline_mb}MB")
+
+    # Always load utility models (regardless of INFERENCE_ENGINE)
+    init_rembg()
 
     if INFERENCE_ENGINE == "diffusers" and MODEL_REGISTRY:
         default_model = MODEL_REGISTRY[0]
