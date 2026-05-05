@@ -125,11 +125,59 @@ export function isLocalMode() {
 
 ---
 
+---
+
+## Sprint 6 Architecture — Hot-Swap + Multi-Studio
+
+```
+[Browser — NQH/MTS Employee]
+        │
+        ▼
+[Next.js 15 App — port 3001 (dev) / 3000 (prod)]
+        │
+        ├── Image Studio ──→ server.py (Diffusers pipeline, hot-swap)
+        ├── Marketing Studio ──→ server.py /api/v1/remove-bg (RMBG utility)
+        ├── Video Studio ──→ Muapi.ai cloud (Phase 6, cloud-only)
+        ├── Cinema Studio ──→ Coming Soon (Sprint 7 conditional)
+        └── Lip Sync Studio ──→ Coming Soon (Sprint 8 conditional)
+
+[local-server/server.py — FastAPI, port 8000 (dev) / 8123 (prod)]
+        │
+        ├── State Machine: IDLE → LOADING → READY → GENERATING
+        ├── Hot-Swap: POST /api/v1/swap-model (diffusers/custom only)
+        ├── Utility: POST /api/v1/remove-bg (rembg, always-resident)
+        ├── Image Gen: POST /api/v1/{model} (Diffusers + MPS CPU offload)
+        └── Health: GET /health (engine, model, peak_ram, latency)
+
+[AI-Platform Gateway — S1 :8120 (MOP integration)]
+        │
+        ├── Routes to: OGA server.py :8123 (priority 1)
+        ├── Fallback: fal.ai / Replicate (priority 2-3)
+        └── Adds: X-Provider-Used, X-Cost-Vnd headers
+```
+
+### Design Artifacts (Sprint 6)
+
+| Document | Purpose |
+|----------|---------|
+| [ADR-001](01-ADRs/ADR-001-initial-architecture.md) | Initial provider abstraction |
+| [ADR-002](01-ADRs/ADR-002-diffusers-engine.md) | mflux → Diffusers migration |
+| [ADR-003](01-ADRs/ADR-003-hot-swap-architecture.md) | Hot-swap state machine + memory management |
+| [ADR-004](01-ADRs/ADR-004-aiplatform-integration.md) | AI-Platform routing spec |
+| [TS-001](14-Technical-Specs/TS-001-provider-abstraction.md) | Provider config module |
+| [TS-002](14-Technical-Specs/TS-002-diffusers-pipeline.md) | Diffusers pipeline integration |
+| [TS-003](14-Technical-Specs/TS-003-pipeline-hot-swap.md) | Hot-swap API + state transitions |
+| [TS-004](14-Technical-Specs/TS-004-rembg-utility.md) | RMBG endpoint spec |
+
+---
+
 ## Quality Gate Requirements
 
 This stage feeds gate(s): **G2**
 
-- [x] **G2**: Architecture documented, provider abstraction designed, API flow clear
+- [x] **G2 (Sprint 1)**: Provider abstraction designed
+- [x] **G2 (Sprint 5)**: Diffusers engine migration approved
+- [ ] **G2 (Sprint 6)**: Hot-swap architecture + RMBG utility designed
 
 ---
 
@@ -137,8 +185,8 @@ This stage feeds gate(s): **G2**
 
 | Upstream Stage | What to Consume |
 |---------------|-----------------|
-| [00-foundation](../00-foundation/) | Problem statement, constraints |
-| [01-planning](../01-planning/) | FR-1→FR-5, NFRs |
+| [00-foundation](../00-foundation/) | Problem statement, constraints, MOP context |
+| [01-planning](../01-planning/) | FR-S6-01→FR-S6-04, NFRs |
 
 ---
 
@@ -147,9 +195,15 @@ This stage feeds gate(s): **G2**
 | Artifact | Required | Status | Owner |
 |----------|----------|--------|-------|
 | Architecture overview (this file) | ✅ Required | ✅ Done | @architect |
-| `providerConfig.js` spec (above) | ✅ Required | ✅ Done | @architect |
-| API flow diagram (above) | ⬜ Optional | ✅ Done | @architect |
+| ADR-001 Provider abstraction | ✅ Required | ✅ Done | @architect |
+| ADR-002 Diffusers engine | ✅ Required | ✅ Done | @architect |
+| ADR-003 Hot-swap architecture | ✅ Required | ✅ Done | @architect |
+| ADR-004 AI-Platform integration | ✅ Required | ✅ Done | @architect |
+| TS-001 Provider config | ✅ Required | ✅ Done | @architect |
+| TS-002 Diffusers pipeline | ✅ Required | ✅ Done | @architect |
+| TS-003 Hot-swap API | ✅ Required | ✅ Done | @architect |
+| TS-004 RMBG utility | ✅ Required | ✅ Done | @architect |
 
 ---
 
-*NQH Creative Studio (OGA) | SDLC Framework v6.3.1 | Stage 02: Design*
+*NQH Creative Studio (OGA) | MOP Tier 1+2 | SDLC Framework v6.3.1 | Stage 02: Design*

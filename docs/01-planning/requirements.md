@@ -287,3 +287,45 @@ Scenario: Deferred tabs are hidden or show Coming Soon without API calls
   Then the page returns HTTP 200 and renders the Coming Soon UI
   And no API request is made to any inference endpoint
 ```
+
+---
+
+## 5. Sprint 6 Functional Requirements
+
+### FR-S6-01 — Pipeline Hot-Swap
+
+The server must support switching between Diffusers pipelines without restart.
+State machine: `IDLE → LOADING → READY → GENERATING`. Separate `_swap_lock` from
+`_gen_lock`. `unload_pipeline()` releases MPS memory within `baseline + 300MB` in 5s.
+
+**Priority:** Must Have
+**Owner:** @coder
+**Design:** ADR-003, TS-003
+
+### FR-S6-02 — Background Removal (RMBG)
+
+`POST /api/v1/remove-bg` accepts base64 image, returns PNG with alpha channel.
+Uses `rembg` (MIT, u2net, CPU ONNX on Apple Silicon). Always-resident utility (~1-2GB),
+does not trigger pipeline swap. Block concurrent if projected RAM > 85% headroom.
+
+**Priority:** Must Have
+**Owner:** @coder
+**Design:** TS-004
+
+### FR-S6-03 — Marketing Studio Activation
+
+Marketing Studio tab active (remove `comingSoon` flag). Wire `removeBackground()` to
+RMBG endpoint. Cloud Muapi stays for video ad generation. MarketingStudio.jsx UI
+already exists — just endpoint wiring.
+
+**Priority:** Must Have
+**Owner:** @coder
+
+### FR-S6-04 — Video Studio Cloud Activation
+
+Video Studio tab active (remove `comingSoon` flag). VideoStudio.jsx already has full
+cloud UI with Muapi.ai endpoints. `generateVideo()`, `generateI2V()` already in muapi.js.
+Tab flip only — no local inference changes.
+
+**Priority:** Must Have
+**Owner:** @coder
