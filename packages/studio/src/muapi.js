@@ -45,6 +45,14 @@ async function submitAndPoll(endpoint, payload, key, onRequestId, maxAttempts = 
         throw new Error(`API Request Failed: ${response.status} ${response.statusText} - ${errText.slice(0, 100)}`);
     }
     const submitData = await response.json();
+
+    // If response already completed (local Diffusers server) — skip polling
+    const respStatus = submitData.status?.toLowerCase();
+    if (respStatus === 'completed' || respStatus === 'succeeded' || respStatus === 'success') {
+        const outputUrl = submitData.outputs?.[0] || submitData.url || submitData.output?.url;
+        return { ...submitData, url: outputUrl };
+    }
+
     const requestId = submitData.request_id || submitData.id;
     if (!requestId) return submitData;
     if (onRequestId) onRequestId(requestId);
