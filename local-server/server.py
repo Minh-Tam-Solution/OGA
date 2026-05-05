@@ -210,10 +210,9 @@ async def diffusers_generate(prompt: str, width: int, height: int,
         log.info(f"Done in {elapsed:.1f}s — RAM: {mem_before}→{mem_after}MB")
 
     b64 = image_to_base64(result)
-    request_id = uuid.uuid4().hex
 
+    # Do NOT include request_id — client skips polling when no requestId in response
     return {
-        "request_id": request_id,
         "status": "completed",
         "outputs": [f"data:image/png;base64,{b64}"],
         "_meta": {
