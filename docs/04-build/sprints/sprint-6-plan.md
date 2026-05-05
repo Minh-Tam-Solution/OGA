@@ -71,9 +71,9 @@ File: `local-server/server.py`
 - State machine: `IDLE → LOADING → READY → GENERATING`
 - `unload_pipeline()`: `del pipe` + `gc.collect()` + `torch.mps.empty_cache()`
 - Separate `_swap_lock` from `_gen_lock` — no swap during generation, no generation during swap
-- `POST /api/v1/swap-model` endpoint
+- `POST /api/v1/swap-model` endpoint — applies to `diffusers`/`custom` types only; utility models are enabled via utility registry and do not force pipeline swap
 - `model_type` field in `models.json`: `"diffusers"` | `"utility"` | `"custom"` | `"cloud-only"`
-- **Gate**: MPS memory returns to baseline within 5s after unload
+- **Gate**: Memory release passes when `peak_ram_mb <= baseline_mb + 300` within 5s after unload
 
 Reference: ZPix `swap_model()` (app.py:212-221) + `pipe_is_busy` flag
 
@@ -85,7 +85,7 @@ Files: `local-server/server.py`, `local-server/requirements-mac.txt`
 - Note: `rembg[gpu]` targets CUDA ONNX; on Apple Silicon use CPU ONNX path (`pip install rembg`)
 - `POST /api/v1/remove-bg`: base64 image → PNG with alpha channel
 - Lightweight (~1-2GB), runs as utility alongside main pipeline (no hot-swap needed)
-- Policy: cap utility RAM in `/api/health` metrics; no concurrent heavy gen + utility if exceeds budget
+- Policy: cap utility RAM in `/api/health` metrics; block concurrent heavy generation + utility when projected RAM exceeds 85% of available headroom
 
 **6.2 Activate Marketing Tab**
 
@@ -114,7 +114,8 @@ Files: `components/StandaloneShell.js`
 
 ### Sprint 6 Acceptance Criteria
 
-- [ ] `unload_pipeline()` releases MPS memory within 5s
+- [ ] `unload_pipeline()` releases MPS memory (`peak_ram_mb <= baseline_mb + 300`) within 5s
+- [ ] ADR-004 contract test: `/v1/images/generations` + `/health` responses match spec
 - [ ] Studio tab switching works without server restart
 - [ ] `POST /api/v1/remove-bg` returns transparent PNG
 - [ ] Marketing Studio tab active and functional
@@ -200,7 +201,7 @@ NOT embedded in OGA server.py. This keeps OGA focused on media generation only.
 
 **What**: Open-source social media scheduling + publishing platform (34+ channels).
 **Role**: NQH Creative Studio generates content → Postiz distributes to social platforms.
-**License**: AGPL-3.0 — self-hosted OK, modifications must be open-sourced.
+**License**: AGPL-3.0 — self-hosted OK, modifications must be open-sourced. Integration is API-boundary only; no AGPL code embedding into OGA codebase.
 
 | Feature | NQH Studio Integration |
 |---------|----------------------|
@@ -306,7 +307,7 @@ Each spike produces one of 3 outcomes:
 | Result | Meaning | Action |
 |--------|---------|--------|
 | **PASS (24GB)** | Works on pilot hardware | Enable local on both pilot + prod |
-| **PROD-ONLY** | OOM on 24GB but fits 48GB estimate | Enable local on prod only, cloud on pilot |
+| **PROD-ONLY** | OOM on 24GB but fits 48GB estimate | Enable local on prod only, cloud on pilot. All PROD-ONLY features must include automatic cloud fallback in the same user flow when local runtime errors |
 | **FAIL** | OOM even on 48GB estimate | Cloud-only, revisit when hardware available |
 
 Example: CogVideoX-2B spike on 24GB → OOM at 16GB peak → but 48GB has 36GB available → **PROD-ONLY** → Video Studio local on Mac Mini, cloud fallback on MacBook.
@@ -364,6 +365,8 @@ Sprint 6 builds hot-swap on 24GB pilot — conservative, correct. 48GB productio
 | Auth / rate limit | ❌ (PIN for dev) | ✅ AI-Platform X-API-Key |
 | Cost attribution | ❌ | ✅ AI-Platform X-Provider-Used header |
 | Analytics | ❌ | ✅ Tier 7 ClickHouse (Phase B) |
+
+**Ownership rule (CPO):** OGA returns generation + metadata only; auth/rate-limit/cost attribution are enforced exclusively by AI-Platform gateway.
 
 ---
 
