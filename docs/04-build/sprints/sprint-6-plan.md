@@ -1,6 +1,6 @@
 # OGA Studios Activation Plan — Sprint 6+ (MOP-Aligned)
 
-**Status:** APPROVED (CTO 2026-05-05 + CPO 2026-05-05)
+**Status:** DONE (merged 2026-05-05, commit 22b63c6c)
 **MOP Reference:** MOP Phase A Spec v3.1 (CEO approved 26/04/2026)
 **ADR Reference:** ADR-004 (mflux/AI-Platform integration)
 
