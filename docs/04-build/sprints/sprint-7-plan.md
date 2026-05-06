@@ -1,7 +1,8 @@
 ---
 sprint: 7
-status: PLANNED
+status: DONE
 start_date: 2026-05-12
+actual_completion: 2026-05-05
 planned_duration: 2 weeks
 framework: "6.3.1"
 authority:
@@ -200,12 +201,12 @@ If AnimateDiff-Lightning spike fails on both 24GB and 48GB estimate:
 
 ## Definition of Done
 
-- [ ] Spike report submitted and reviewed by @cto
-- [ ] IP-Adapter endpoint functional
-- [ ] Concurrency runtime test added
-- [ ] Cinema activated OR cloud-only decision documented
-- [ ] All tests pass (95+)
-- [ ] Sprint plan updated to `status: DONE`
+- [x] Spike report submitted and reviewed by @cto
+- [x] IP-Adapter endpoint functional
+- [x] Concurrency runtime test added
+- [x] Cinema activated OR cloud-only decision documented
+- [x] All tests pass (112)
+- [x] Sprint plan updated to `status: DONE`
 - [ ] Branch merged to main
 
 ---

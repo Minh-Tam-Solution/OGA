@@ -30,5 +30,31 @@
         "default": {},
         "features": ["remove-background"],
         "ram_gb": 2
+    },
+    {
+        "id": "h94/IP-Adapter-SD15",
+        "frontend_ids": ["ip-adapter", "product-placement"],
+        "name": "IP-Adapter (SD 1.5)",
+        "pipeline": "IPAdapterPipeline",
+        "model_type": "diffusers",
+        "base_model": "runwayml/stable-diffusion-v1-5",
+        "ip_adapter_model": "h94/IP-Adapter",
+        "ip_adapter_subfolder": "models",
+        "ip_adapter_weight_name": "ip-adapter_sd15.bin",
+        "default": {"steps": 8, "cfg": 7.5, "strength": 0.6},
+        "features": ["image-to-image", "product-placement"],
+        "ram_gb": 5
+    },
+    {
+        "id": "guoyww/animatediff-motion-adapter-v1-5-2",
+        "frontend_ids": ["animatediff", "cinema"],
+        "name": "AnimateDiff Lightning",
+        "pipeline": "AnimateDiffPipeline",
+        "model_type": "diffusers",
+        "base_model": "runwayml/stable-diffusion-v1-5",
+        "motion_adapter": "guoyww/animatediff-motion-adapter-v1-5-2",
+        "default": {"steps": 4, "cfg": 1.0, "num_frames": 16},
+        "features": ["text-to-video", "cinema"],
+        "ram_gb": 6
     }
 ]

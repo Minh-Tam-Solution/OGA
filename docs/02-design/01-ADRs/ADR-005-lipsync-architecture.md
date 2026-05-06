@@ -1,28 +1,45 @@
 ---
 adr_id: ADR-005
-title: "Lip Sync Architecture — LivePortrait with MIT Face Detection"
-status: Proposed
+title: "Lip Sync Architecture — Audio-Driven Models (Revised Post-Sprint 9)"
+status: Accepted
 date: 2026-05-05
+revised: 2026-05-05
 deciders: ["@cto"]
 gate: G2
 references:
   - ADR-003 (hot-swap architecture)
   - TS-003 (pipeline hot-swap mechanism)
-  - Sprint 7 spike report (AnimateDiff FAIL — latency learnings)
+  - Sprint 8 spike report (LivePortrait FAIL — video-driven, not audio-driven)
+  - Sprint 9 spike reports (Wav2Lip FAIL license, MuseTalk FAIL deps)
 ---
 
-# ADR-005: Lip Sync Architecture
+# ADR-005: Lip Sync Architecture (Revised)
 
 ## Status
 
-**Proposed** — pending @cto review.
+**Accepted** — revised after Sprint 9 dual spike results.
+
+## Revision History
+
+| Date | Revision | Reason |
+|------|----------|--------|
+| 2026-05-05 | v1.0 | Initial ADR — LivePortrait + RetinaFace |
+| 2026-05-05 | v2.0 | Revised — all audio lip-sync models failed; Lip Sync stays cloud-only |
 
 ## Context
 
 Lip Sync Studio needs a local inference engine for generating lip-synced videos
-from portrait images/videos + audio input. The primary candidate is LivePortrait
-(MIT license), but its default dependency on InsightFace for face detection creates
-a commercial license risk (InsightFace = non-commercial).
+from portrait images/videos + audio input.
+
+### Spike Results (Sprints 8–9)
+
+| Model | Type | License | Result | Blocker |
+|-------|------|---------|--------|---------|
+| LivePortrait | Video-driven | MIT | ❌ FAIL | Does NOT accept audio input |
+| Wav2Lip | Audio-driven | ❌ None | ❌ FAIL | All rights reserved (no LICENSE) |
+| MuseTalk | Audio-driven | MIT + Apache 2.0 | ❌ FAIL | mmpose/mmcv build failure on macOS |
+| SadTalker | Audio-driven | MIT | ⏸️ Not spiked | Similar dependency profile to MuseTalk |
+| CogVideoX-2B | Text-to-video | Apache 2.0 | 🔄 In progress | Fallback for Video Studio local |
 
 ### Constraints
 
@@ -30,101 +47,82 @@ a commercial license risk (InsightFace = non-commercial).
 2. **RAM**: Must fit within 24GB pilot (< 8GB peak) or 48GB production
 3. **Latency**: < 30s for 5s video (PASS threshold)
 4. **Architecture**: Must integrate with Sprint 6 hot-swap state machine (ADR-003)
-5. **Non-diffusers**: LivePortrait is custom PyTorch, not a diffusers pipeline
-
-### Sprint 7 Learnings
-
-AnimateDiff spike failed at 37x over latency threshold due to:
-- MPS + CPU offload memory transfer overhead
-- Sequential frame processing without parallelism
-- float16 numerical issues on MPS
-
-LivePortrait risk profile differs:
-- Smaller model (face-specific, not general image generation)
-- Fewer sequential steps than AnimateDiff's denoising loop
-- But: video frame generation is still sequential
+5. **Audio input**: Must accept audio file + image/video → lip-synced video
 
 ## Decision
 
-### Engine: LivePortrait (MIT)
+### v2.0 Decision: Lip Sync — Cloud-Only
 
-LivePortrait generates lip-synced video by:
-1. Detecting face landmarks in source image
-2. Extracting motion parameters from driving audio
-3. Rendering face with new lip movements frame-by-frame
-4. Compositing face back into original image/video
+**No locally-runnable audio-driven lip-sync model was found that meets all criteria.**
 
-### Face Detection: RetinaFace (MIT)
+| Criterion | Wav2Lip | MuseTalk | LivePortrait |
+|-----------|---------|----------|--------------|
+| Audio input | ✅ Yes | ✅ Yes | ❌ No |
+| License | ❌ NC | ✅ OK | ✅ OK |
+| Runs on macOS | Not tested | ❌ No (deps) | ✅ Yes |
+| Commercial use | ❌ No | ✅ Yes | ✅ Yes |
 
-Replace InsightFace detector with RetinaFace:
+**Result**: Lip Sync Studio remains **cloud-only** for the pilot phase.
 
-| Detector | License | Accuracy | Speed | Decision |
-|----------|---------|----------|-------|----------|
-| InsightFace | Non-commercial ❌ | High | Fast | **Rejected** — NC license |
-| RetinaFace | MIT ✅ | High | Fast | **Primary** |
-| MediaPipe Face | Apache 2.0 ✅ | Medium | Very fast | **Fallback** |
+### Cloud-Only Pattern
 
-Adapter pattern: wrap RetinaFace to match LivePortrait's expected detector API:
-```python
-class RetinaFaceAdapter:
-    """Adapts RetinaFace output to LivePortrait's expected format."""
-    def detect(self, image) -> list[FaceInfo]:
-        # RetinaFace returns bboxes + landmarks
-        # Convert to LivePortrait's FaceInfo format
-        ...
+The cloud-only pattern (established in Sprint 7 for Cinema Studio) is applied:
+
+```jsx
+// LipSyncStudio.jsx
+{isLocal && (
+  <div className="cloud-only-banner">
+    Lip Sync is cloud-only on this device
+  </div>
+)}
 ```
 
-### model_type: "custom"
+- `isLocal` prop: `true` when `NEXT_PUBLIC_LOCAL_MODE === 'true'`
+- Local mode: shows banner + instructions to use cloud
+- Cloud mode: full functionality via API
 
-LivePortrait is not a diffusers pipeline. It uses custom PyTorch modules.
-ADR-003 defines `model_type: "custom"` for this case:
+### Video Studio — CogVideoX-2B Fallback
 
-- Swappable via hot-swap endpoint (same state machine)
-- Custom loading path: `load_liveportrait_pipeline()` instead of `from_pretrained()`
-- Lazy-load pattern: load on first lip-sync request, unload after completion
-- Uses `_gen_lock` during inference (same concurrency protection)
+If CogVideoX-2B spike passes, Video Studio gets a local/cloud toggle:
 
-### Memory Strategy
+| Mode | Engine | Input |
+|------|--------|-------|
+| Local | CogVideoX-2B | Text prompt → Video |
+| Cloud | fal.ai / Replicate | Text/Image → Video |
 
-Based on Sprint 7 IP-Adapter learnings (lazy-load works well on 24GB):
+This is **not** lip-sync but adds local video generation capability.
 
-| Hardware | Strategy |
-|----------|----------|
-| 24GB MacBook | Lazy-load: load LivePortrait on request, unload after, free RAM for other pipelines |
-| 48GB Mac Mini | Semi-resident: keep loaded if RAM available, LRU evict if needed |
+### Future Re-evaluation
 
-### Audio Processing
-
-- Accept: WAV, MP3, M4A (via torchaudio, BSD license)
-- Resample to 16kHz mono before inference
-- Max duration: 30s (prevents memory exhaustion on long audio)
-- Pre-process audio before model load to minimize loaded time
+| Trigger | Action |
+|---------|--------|
+| New audio lip-sync model released | Re-spike with 2-day protocol |
+| Docker/Python 3.10 environment available | Re-test MuseTalk |
+| GPU cloud tier (fal.ai) | Evaluate cloud lip-sync pricing |
 
 ## Consequences
 
 ### Positive
 
-- Full MIT/Apache 2.0 stack — no commercial license risk
-- Integrates with existing hot-swap state machine (no new infra)
-- Lazy-load pattern proven by Sprint 7 IP-Adapter
-- LipSyncStudio.jsx already complete — just wiring
+- No license risk — all evaluated models properly vetted
+- No dependency hell in production venv
+- Cloud-only pattern proven stable (Cinema Studio since Sprint 7)
+- Engineering effort can pivot to CogVideoX (text-to-video) if spike passes
 
 ### Negative
 
-- RetinaFace adapter adds ~50 lines of glue code
-- LivePortrait model weights (~500MB) need download on first use
-- Custom loading path adds complexity vs diffusers `from_pretrained()`
-- Latency risk on MPS (learned from AnimateDiff spike failure)
+- Lip Sync requires internet connection
+- Cloud API costs for lip-sync generation
+- User experience gap: local image generation but cloud lip-sync
 
 ### Risks
 
 | Risk | Mitigation |
 |------|-----------|
-| LivePortrait latency on MPS (AnimateDiff pattern) | Spike protocol: 2-day max, 3-tier result |
-| RetinaFace accuracy insufficient | MediaPipe fallback (Apache 2.0) |
-| torchaudio/LivePortrait dep conflict | Pin versions; isolate if needed |
-| bf16 not supported by LivePortrait | Fall back to fp32 with higher RAM |
+| No local lip-sync forever | Monitor model releases monthly; re-spike when viable |
+| Cloud API downtime | Graceful degradation with user messaging |
+| CogVideoX also fails | Video stays cloud-only; 2 local + 3 cloud studios still valid |
 
 ---
 
-*NQH Creative Studio (OGA) | ADR-005 | Proposed 2026-05-05*
+*NQH Creative Studio (OGA) | ADR-005 v2.0 | Accepted 2026-05-05*

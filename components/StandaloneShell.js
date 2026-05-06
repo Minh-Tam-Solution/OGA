@@ -29,8 +29,8 @@ const _wan2gpEnabled = process.env.NEXT_PUBLIC_WAN2GP_ENABLED === 'true';
 const TABS = [
   { id: 'image',   label: 'Image Studio' },
   { id: 'video',   label: 'Video Studio',     comingSoon: false },
-  { id: 'lipsync', label: 'Lip Sync',          comingSoon: _isLocal },
-  { id: 'cinema',  label: 'Cinema Studio',     comingSoon: _isLocal },
+  { id: 'lipsync', label: 'Lip Sync',          comingSoon: false },
+  { id: 'cinema',  label: 'Cinema Studio',     comingSoon: false },
   { id: 'marketing', label: 'Marketing Studio', comingSoon: false },
   // Workflows and Agents hidden in local mode
   ...(_isLocal ? [] : [
@@ -340,8 +340,8 @@ export default function StandaloneShell() {
       <div className="flex-1 min-h-0 relative overflow-hidden">
         {activeTab === 'image'   && <ImageStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
         {activeTab === 'video'   && <VideoStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
-        {activeTab === 'lipsync' && (_isLocal ? <ComingSoon label="Lip Sync" /> : <LipSyncStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />)}
-        {activeTab === 'cinema'  && (_isLocal ? <ComingSoon label="Cinema Studio" /> : <CinemaStudio  apiKey={apiKey} />)}
+        {activeTab === 'lipsync' && <LipSyncStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} isLocal={_isLocal} />}
+        {activeTab === 'cinema'  && <CinemaStudio apiKey={apiKey} isLocal={_isLocal} />}
         {activeTab === 'marketing' && <MarketingStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
         {activeTab === 'workflows' && <WorkflowStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />}
         {activeTab === 'agents' && <AgentStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />}

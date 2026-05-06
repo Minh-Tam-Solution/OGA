@@ -40,6 +40,13 @@ out/
 # Python virtual env
 .venv/
 
+# Spike artifacts (large model repos, not production code)
+local-server/liveportrait/
+local-server/musetalk/
+local-server/musetalk_venv/
+local-server/__pycache__/
+local-server/tests/__pycache__/
+
 # Claude Code / EndiorBot
 .claude/
 .endiorbot/

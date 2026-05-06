@@ -445,6 +445,7 @@ export default function CinemaStudio({
   apiKey,
   onGenerationComplete,
   historyItems,
+  isLocal = false,
 }) {
   const PERSIST_KEY = "hg_cinema_studio_persistent";
 
@@ -709,6 +710,15 @@ export default function CinemaStudio({
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="w-full h-full flex flex-col items-center justify-center bg-black relative overflow-hidden">
+      
+      {/* Local-mode cloud-only banner */}
+      {isLocal && (
+        <div className="absolute top-0 left-0 right-0 z-50 bg-[#d9ff00]/10 border-b border-[#d9ff00]/20 px-4 py-2 text-center">
+          <p className="text-[11px] font-bold text-[#d9ff00] uppercase tracking-widest">
+            🎬 Cinema Studio video generation is cloud-only on this device
+          </p>
+        </div>
+      )}
       
       {/* ── CENTRAL GALLERY AREA ── */}
       <div className="flex-1 w-full max-w-7xl mx-auto overflow-y-auto custom-scrollbar pb-40 lg:pb-32 px-2">

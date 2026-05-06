@@ -99,6 +99,13 @@ class SwapRequest(BaseModel):
 class RemoveBgRequest(BaseModel):
     image: str  # base64 data URL
 
+class ProductPlacementRequest(BaseModel):
+    product_image: str  # base64 data URL
+    scene_prompt: str
+    steps: int | None = None
+    strength: float | None = None
+    seed: int | None = None
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -234,6 +241,26 @@ def load_pipeline(model_config: dict):
         from diffusers import ZImagePipeline as PipeClass
     elif pipeline_name == "Flux2KleinPipeline":
         from diffusers import Flux2KleinPipeline as PipeClass
+    elif pipeline_name == "AnimateDiffPipeline":
+        from diffusers import AnimateDiffPipeline, MotionAdapter, DDIMScheduler
+        adapter_id = model_config.get("motion_adapter", model_id)
+        base_id = model_config.get("base_model", "runwayml/stable-diffusion-v1-5")
+        log.info(f"Loading MotionAdapter: {adapter_id} ...")
+        adapter = MotionAdapter.from_pretrained(adapter_id, torch_dtype=torch.float16)
+        log.info(f"Loading AnimateDiff base: {base_id} ...")
+        pipe = AnimateDiffPipeline.from_pretrained(
+            base_id, motion_adapter=adapter, torch_dtype=torch.float16
+        )
+        pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
+        if torch.backends.mps.is_available():
+            pipe.enable_model_cpu_offload(device="mps")
+            log.info("MPS CPU offload enabled for AnimateDiff")
+        else:
+            pipe.enable_model_cpu_offload()
+        current_model = model_config
+        pipeline_state = PipelineState.READY
+        log.info(f"Pipeline ready: {model_config['name']} (RAM: {get_mps_memory()}MB)")
+        return
     else:
         pipeline_state = PipelineState.IDLE
         raise ValueError(f"Unknown pipeline: {pipeline_name}")
@@ -270,7 +297,8 @@ def swap_pipeline(model_config: dict):
 
 async def diffusers_generate(prompt: str, width: int, height: int,
                              steps: int | None = None, seed: int | None = None,
-                             cfg: float | None = None, image=None) -> dict:
+                             cfg: float | None = None, image=None,
+                             num_frames: int | None = None) -> dict:
     global last_peak_ram, last_gen_latency, pipeline_state
     import torch
 
@@ -280,11 +308,17 @@ async def diffusers_generate(prompt: str, width: int, height: int,
     gen_cfg = cfg if cfg is not None else defaults.get("cfg", 0.0)
     gen_seed = seed if (seed is not None and seed != -1) else int(time.time()) % 1000000
 
+    # Detect video model
+    is_video = "text-to-video" in model_cfg.get("features", [])
+
     pipe_kwargs = {
         "prompt": prompt, "height": height, "width": width,
         "num_inference_steps": gen_steps, "guidance_scale": float(gen_cfg),
         "generator": torch.manual_seed(gen_seed),
     }
+
+    if is_video:
+        pipe_kwargs["num_frames"] = num_frames or defaults.get("num_frames", 16)
 
     if image is not None and "image-to-image" in model_cfg.get("features", []):
         from PIL import Image as PILImage
@@ -308,10 +342,10 @@ async def diffusers_generate(prompt: str, width: int, height: int,
         pipeline_state = PipelineState.GENERATING
         start = time.time()
         mem_before = get_mps_memory()
-        log.info(f"Generating: {prompt[:80]}... ({width}x{height}, steps={gen_steps})")
+        log.info(f"Generating: {prompt[:80]}... ({width}x{height}, steps={gen_steps}, video={is_video})")
 
         try:
-            result = await asyncio.to_thread(lambda: pipe(**pipe_kwargs).images[0])
+            result = await asyncio.to_thread(lambda: pipe(**pipe_kwargs))
         finally:
             pipeline_state = PipelineState.READY
 
@@ -321,7 +355,29 @@ async def diffusers_generate(prompt: str, width: int, height: int,
         last_gen_latency = elapsed
         log.info(f"Done in {elapsed:.1f}s — RAM: {mem_before}→{mem_after}MB")
 
-    b64 = image_to_base64(result)
+    if is_video:
+        from diffusers.utils import export_to_video
+        frames = result.frames[0]
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            mp4_path = f.name
+        export_to_video(frames, mp4_path, fps=8)
+        mp4_bytes = Path(mp4_path).read_bytes()
+        Path(mp4_path).unlink(missing_ok=True)
+        b64 = base64.b64encode(mp4_bytes).decode()
+        return {
+            "status": "completed",
+            "outputs": [f"data:video/mp4;base64,{b64}"],
+            "_meta": {
+                "model": model_cfg.get("name", "unknown"),
+                "size": f"{width}x{height}", "steps": gen_steps, "seed": gen_seed,
+                "elapsed_seconds": round(elapsed, 1), "peak_ram_mb": last_peak_ram,
+                "engine": "diffusers", "format": "mp4", "frames": len(frames),
+            },
+        }
+
+    result_image = result.images[0]
+    b64 = image_to_base64(result_image)
     return {
         "status": "completed",
         "outputs": [f"data:image/png;base64,{b64}"],
@@ -475,7 +531,7 @@ async def remove_bg(req: RemoveBgRequest):
 
     try:
         header, b64data = req.image.split(",", 1)
-        img_bytes = base64.b64decode(b64data)
+        img_bytes = base64.b64decode(b64data, validate=True)
         if not img_bytes:
             raise ValueError("Empty image after base64 decode")
     except Exception:
@@ -514,6 +570,125 @@ async def remove_bg(req: RemoveBgRequest):
             "model": "RMBG (u2net)",
             "input_size": input_size,
             "output_format": "PNG (RGBA)",
+            "elapsed_seconds": round(elapsed, 1),
+            "ram_mb": get_process_rss_mb(),
+        },
+    }
+
+
+# ─── IP-Adapter Product Placement (Sprint 7.1) ───────────────────────────────
+
+_ip_adapter_pipe = None
+
+async def _load_ip_adapter():
+    """Lazy-load IP-Adapter pipeline. Unloads current diffusers pipe if needed."""
+    global _ip_adapter_pipe
+    import torch
+
+    if _ip_adapter_pipe is not None:
+        return
+
+    # Conservative: unload active diffusers pipeline to free RAM on 24GB
+    if pipe is not None:
+        log.info("Unloading active diffusers pipeline to make room for IP-Adapter")
+        unload_pipeline()
+
+    model_id = "runwayml/stable-diffusion-v1-5"
+    log.info(f"Loading IP-Adapter base pipeline: {model_id} ...")
+
+    from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
+    _ip_adapter_pipe = StableDiffusionPipeline.from_pretrained(
+        model_id, torch_dtype=torch.float16, safety_checker=None
+    )
+    _ip_adapter_pipe.scheduler = DPMSolverMultistepScheduler.from_config(
+        _ip_adapter_pipe.scheduler.config
+    )
+    _ip_adapter_pipe.load_ip_adapter(
+        "h94/IP-Adapter", subfolder="models", weight_name="ip-adapter_sd15.bin"
+    )
+    if torch.backends.mps.is_available():
+        _ip_adapter_pipe = _ip_adapter_pipe.to("mps")
+        log.info("IP-Adapter pipeline on MPS")
+    else:
+        _ip_adapter_pipe = _ip_adapter_pipe.to("cpu")
+        log.info("IP-Adapter pipeline on CPU")
+
+
+def _unload_ip_adapter():
+    """Release IP-Adapter pipeline memory."""
+    global _ip_adapter_pipe
+    import torch
+    if _ip_adapter_pipe is not None:
+        del _ip_adapter_pipe
+        _ip_adapter_pipe = None
+        gc.collect()
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+        log.info("IP-Adapter pipeline unloaded")
+
+
+@app.post("/api/v1/product-placement")
+async def product_placement(req: ProductPlacementRequest):
+    """IP-Adapter product placement: product image + scene prompt → composed image."""
+    if not req.product_image or not req.product_image.startswith("data:image"):
+        raise HTTPException(400, {"error": "Invalid product image"})
+
+    try:
+        header, b64data = req.product_image.split(",", 1)
+        img_bytes = base64.b64decode(b64data, validate=True)
+    except Exception:
+        raise HTTPException(400, {"error": "Invalid base64 encoding"})
+
+    if len(img_bytes) / (1024 * 1024) > 10:
+        raise HTTPException(413, {"error": "Image too large (max 10MB)"})
+
+    if is_ram_over_cap():
+        raise HTTPException(503, {"error": "Server overloaded"}, headers={"Retry-After": "30"})
+
+    # Decode reference image
+    from PIL import Image as PILImage
+    ref_image = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
+
+    await asyncio.to_thread(_load_ip_adapter)
+    if _ip_adapter_pipe is None:
+        raise HTTPException(503, {"error": "IP-Adapter pipeline unavailable"})
+
+    scale = req.strength if req.strength is not None else 0.6
+    num_steps = req.steps or 8
+    gen_seed = req.seed if (req.seed is not None and req.seed != -1) else int(time.time()) % 1000000
+
+    _ip_adapter_pipe.set_ip_adapter_scale(scale)
+
+    import torch
+    start = time.time()
+    try:
+        result = await asyncio.to_thread(
+            lambda: _ip_adapter_pipe(
+                prompt=req.scene_prompt,
+                ip_adapter_image=[ref_image],
+                num_inference_steps=num_steps,
+                generator=torch.manual_seed(gen_seed),
+            ).images[0]
+        )
+    except Exception as e:
+        log.error(f"IP-Adapter failed: {e}")
+        raise HTTPException(500, {"error": f"Product placement failed: {str(e)}"})
+    finally:
+        # Conservative: unload after each request on 24GB
+        _unload_ip_adapter()
+
+    elapsed = time.time() - start
+    b64 = image_to_base64(result)
+
+    return {
+        "status": "completed",
+        "output": f"data:image/png;base64,{b64}",
+        "_meta": {
+            "model": "IP-Adapter (SD 1.5)",
+            "scene_prompt": req.scene_prompt,
+            "strength": scale,
+            "steps": num_steps,
+            "seed": gen_seed,
             "elapsed_seconds": round(elapsed, 1),
             "ram_mb": get_process_rss_mb(),
         },
