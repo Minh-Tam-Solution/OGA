@@ -138,8 +138,8 @@ export function isLocalMode() {
         ├── Image Studio ──→ server.py (Diffusers pipeline, hot-swap)
         ├── Marketing Studio ──→ server.py /api/v1/remove-bg (RMBG utility)
         ├── Video Studio ──→ Muapi.ai cloud (Phase 6, cloud-only)
-        ├── Cinema Studio ──→ Coming Soon (Sprint 7 conditional)
-        └── Lip Sync Studio ──→ Coming Soon (Sprint 8 conditional)
+        ├── Cinema Studio ──→ Muapi.ai cloud (Sprint 7, spike FAIL → cloud-only)
+        └── Lip Sync Studio ──→ LivePortrait local (Sprint 8, conditional on spike)
 
 [local-server/server.py — FastAPI, port 8000 (dev) / 8123 (prod)]
         │
@@ -147,6 +147,8 @@ export function isLocalMode() {
         ├── Hot-Swap: POST /api/v1/swap-model (diffusers/custom only)
         ├── Utility: POST /api/v1/remove-bg (rembg, always-resident)
         ├── Image Gen: POST /api/v1/{model} (Diffusers + MPS CPU offload)
+        ├── Product: POST /api/v1/product-placement (IP-Adapter, Sprint 7)
+        ├── Lip Sync: POST /api/v1/lip-sync (LivePortrait, Sprint 8 conditional)
         └── Health: GET /health (engine, model, peak_ram, latency)
 
 [AI-Platform Gateway — S1 :8120 (MOP integration)]
@@ -156,7 +158,7 @@ export function isLocalMode() {
         └── Adds: X-Provider-Used, X-Cost-Vnd headers
 ```
 
-### Design Artifacts (Sprint 6)
+### Design Artifacts (Sprint 6-8)
 
 | Document | Purpose |
 |----------|---------|
@@ -168,6 +170,8 @@ export function isLocalMode() {
 | [TS-002](14-Technical-Specs/TS-002-diffusers-pipeline.md) | Diffusers pipeline integration |
 | [TS-003](14-Technical-Specs/TS-003-pipeline-hot-swap.md) | Hot-swap API + state transitions |
 | [TS-004](14-Technical-Specs/TS-004-rembg-utility.md) | RMBG endpoint spec |
+| [ADR-005](01-ADRs/ADR-005-lipsync-architecture.md) | Lip Sync architecture + MIT face detection |
+| [TS-005](14-Technical-Specs/TS-005-liveportrait-lipsync.md) | LivePortrait endpoint spec |
 
 ---
 
@@ -177,7 +181,8 @@ This stage feeds gate(s): **G2**
 
 - [x] **G2 (Sprint 1)**: Provider abstraction designed
 - [x] **G2 (Sprint 5)**: Diffusers engine migration approved
-- [ ] **G2 (Sprint 6)**: Hot-swap architecture + RMBG utility designed
+- [x] **G2 (Sprint 6)**: Hot-swap architecture + RMBG utility designed
+- [ ] **G2 (Sprint 8)**: Lip Sync architecture + face detection designed
 
 ---
 
@@ -186,7 +191,7 @@ This stage feeds gate(s): **G2**
 | Upstream Stage | What to Consume |
 |---------------|-----------------|
 | [00-foundation](../00-foundation/) | Problem statement, constraints, MOP context |
-| [01-planning](../01-planning/) | FR-S6-01→FR-S6-04, NFRs |
+| [01-planning](../01-planning/) | FR-S6-01→FR-S6-04, FR-S8-01→FR-S8-04, NFRs |
 
 ---
 
@@ -203,6 +208,8 @@ This stage feeds gate(s): **G2**
 | TS-002 Diffusers pipeline | ✅ Required | ✅ Done | @architect |
 | TS-003 Hot-swap API | ✅ Required | ✅ Done | @architect |
 | TS-004 RMBG utility | ✅ Required | ✅ Done | @architect |
+| ADR-005 Lip Sync architecture | ✅ Required | ⬜ Proposed | @architect |
+| TS-005 LivePortrait endpoint | ✅ Required | ⬜ Proposed | @architect |
 
 ---
 

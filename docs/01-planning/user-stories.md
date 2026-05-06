@@ -252,6 +252,106 @@ Scenario: Handle cloud API failure gracefully
 
 ---
 
+## Sprint 8 User Stories
+
+### US-LIPSYNC — Content Creator Creates Lip-Synced Video Locally
+
+**References:** FR-S8-01 (LivePortrait), FR-S8-02 (face detection), NFR-2, NFR-9
+**Scope reference:** MOP Phase A — Lip Sync Studio
+**Priority:** Must Have
+**Sprint:** 8
+
+#### User Story
+
+As a **Content Creator**, I want to generate lip-synced videos from a portrait image
+and audio clip locally, so that I can create talking-head content without cloud API cost
+and without sending face data to external services.
+
+#### Acceptance Criteria (BDD)
+
+```gherkin
+Scenario: Generate lip-synced video from image + audio
+  GIVEN I am in the Lip Sync Studio with a portrait image uploaded
+  AND I have uploaded a 5-second audio clip
+  WHEN I click "Generate"
+  THEN the system detects the face in the portrait using RetinaFace (MIT)
+  AND generates a lip-synced video using LivePortrait (MIT)
+  AND returns an MP4 video within 30 seconds
+  AND no external API call is made
+
+Scenario: Face detection fails gracefully
+  GIVEN I upload an image with no clear face (e.g., landscape photo)
+  WHEN I click "Generate"
+  THEN the system returns an error: "No face detected in image"
+  AND suggests uploading a clear frontal portrait
+
+Scenario: Local/cloud mode switching
+  GIVEN I am in Lip Sync Studio on the MacBook (local mode)
+  AND LivePortrait is not available locally (spike PROD-ONLY)
+  WHEN the studio loads
+  THEN it shows a banner: "Lip sync runs on production server only"
+  AND falls back to cloud models for generation
+```
+
+---
+
+### US-LIPSYNC-TAB — Content Creator Accesses Lip Sync Studio
+
+**References:** FR-S8-03 (tab activation), NFR-1
+**Scope reference:** MOP Phase A — Lip Sync tab
+**Priority:** Must Have
+**Sprint:** 8
+
+#### User Story
+
+As a **Content Creator**, I want to access the Lip Sync Studio tab directly, so that I
+can use both local and cloud lip sync models from one interface.
+
+#### Acceptance Criteria (BDD)
+
+```gherkin
+Scenario: Navigate to Lip Sync Studio
+  GIVEN I am logged into NQH Creative Studio
+  WHEN I click the "Lip Sync" tab in the main navigation
+  THEN the Lip Sync Studio interface loads
+  AND displays both Image mode and Video mode options
+  AND shows available models (local LivePortrait + cloud models)
+
+Scenario: Dual mode — Image and Video input
+  GIVEN I am in Lip Sync Studio
+  WHEN I toggle between Image mode and Video mode
+  THEN the upload area changes to accept the correct file type
+  AND the model list filters to show compatible models
+```
+
+---
+
+### US-TTS-LIPSYNC — Content Creator Creates Video from Text (Optional)
+
+**References:** FR-S8-04 (VibeVoice TTS), NFR-2
+**Scope reference:** MOP Phase A — Voice integration
+**Priority:** Could Have
+**Sprint:** 8
+
+#### User Story
+
+As a **Content Creator**, I want to type text and have it automatically converted to
+speech and lip-synced to a portrait, so that I can create talking-head videos without
+recording audio.
+
+#### Acceptance Criteria (BDD)
+
+```gherkin
+Scenario: Text-to-speech-to-lip-sync pipeline
+  GIVEN I am in Lip Sync Studio with a portrait uploaded
+  WHEN I type text in the prompt field and click "Generate with Voice"
+  THEN the system converts text to speech using VibeVoice (MIT)
+  AND feeds the generated audio into LivePortrait
+  AND returns a lip-synced video with the generated voice
+```
+
+---
+
 ## Traceability Matrix
 
 | Story ID | Sprint | Requirement | Priority | Persona | Pipeline |
@@ -262,3 +362,6 @@ Scenario: Handle cloud API failure gracefully
 | US-RMBG | 6 | FR-C02, NFR-2, NFR-9 | Must Have | Marketing Team Member | Image (local) |
 | US-MARKETING-TAB | 6 | FR-C03, NFR-1 | Must Have | Marketing Team Member | Marketing (local) |
 | US-VIDEO-TAB | 6 | FR-C04, NFR-1 | Should Have | Content Creator | Video (cloud) |
+| US-LIPSYNC | 8 | FR-S8-01, FR-S8-02, NFR-2, NFR-9 | Must Have | Content Creator | Lip Sync (local) |
+| US-LIPSYNC-TAB | 8 | FR-S8-03, NFR-1 | Must Have | Content Creator | Lip Sync (local+cloud) |
+| US-TTS-LIPSYNC | 8 | FR-S8-04, NFR-2 | Could Have | Content Creator | Voice + Lip Sync |

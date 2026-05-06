@@ -329,3 +329,49 @@ Tab flip only — no local inference changes.
 
 **Priority:** Must Have
 **Owner:** @coder
+
+---
+
+## 6. Sprint 8 Functional Requirements
+
+### FR-S8-01 — Lip Sync Inference (LivePortrait)
+
+`POST /api/v1/lip-sync` accepts image/video (base64) + audio (base64 or URL),
+returns MP4 video with lip-synced face. Uses LivePortrait (MIT license) with
+RetinaFace face detector (MIT) — NOT InsightFace (NC risk). model_type: "custom"
+in models.json — swappable via hot-swap state machine, non-diffusers loading path.
+Lazy-load pattern: load on request, unload after completion to conserve RAM.
+
+**Priority:** Must Have (conditional on spike PASS/PROD-ONLY)
+**Owner:** @coder
+**Design:** ADR-005, TS-005
+
+### FR-S8-02 — Face Detection (MIT Licensed)
+
+Face detection for LivePortrait must use a commercially-safe detector.
+Primary: RetinaFace (MIT). Fallback: MediaPipe Face Detection (Apache 2.0).
+Adapter pattern: wrap detector to match LivePortrait's expected interface.
+Minimum accuracy: 90% face detection rate on standard test images.
+
+**Priority:** Must Have (conditional on spike)
+**Owner:** @coder
+**Design:** ADR-005
+
+### FR-S8-03 — Lip Sync Studio Activation
+
+Lip Sync Studio tab active (remove `comingSoon: _isLocal` flag).
+LipSyncStudio.jsx already has full cloud UI (dual mode: Image + Video, 8 models).
+Add local mode detection: route to `POST /api/v1/lip-sync` when local,
+existing `processLipSync()` when cloud. Add `processLipSyncLocal()` to muapi.js.
+
+**Priority:** Must Have (conditional on spike)
+**Owner:** @coder
+
+### FR-S8-04 — VibeVoice TTS Integration (Optional)
+
+Text-to-speech input for lip sync pipeline. VibeVoice-Realtime 0.5B (MIT,
+~300ms latency) generates speech from text, feeds directly into LivePortrait.
+Enables text → voice → lip-synced video in one step.
+
+**Priority:** Could Have (defer to Sprint 9 if time-constrained)
+**Owner:** @coder
