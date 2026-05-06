@@ -2,7 +2,7 @@
 
 > **The free, open-source, unrestricted alternative to Higgsfield AI, Freepik, Krea, Openart AI.** Generate AI images and videos using 200+ state-of-the-art models — no content filters, no closed ecosystem, no subscription fees.
 
-> 🐎 **Early access to Happy Horse 1.0** — Alibaba's #1 ranked AI video model. Check out [Awesome HappyHorse 1.0 API & Prompts](https://github.com/Anil-matcha/Awesome-HappyHorse-1.0-API-and-Prompt) — a Python wrapper plus a curated library of high-performing community prompts for native 1080p text-to-video and image-to-video generation with jointly generated audio.
+**Community:** Join [Reddit](reddit.com/r/muapi) & [Discord](https://discord.gg/s7KW4fsqXK) for discussions and support
 
 > 🤖 **Automate Higgsfield, Freepik, Krea, Openart & more with AI coding agents:** [Generative-Media-Skills](https://github.com/SamurAIGPT/Generative-Media-Skills) — a library of skills that let agents like **Claude Code**, **Codex**, and other coding assistants drive 200+ image/video models end-to-end (prompt → generate → edit → stitch) directly from your terminal. Perfect for building automated media pipelines without touching a UI.
 
@@ -10,9 +10,9 @@
 
 > **Open-source Weavy, Flora Fauna Freepik Spaces, Krea nodes alternative** -> https://github.com/SamurAIGPT/Vibe-Workflow
 
-> **Open-source multi-modal chatbot and Poe alternative** -> https://github.com/Anil-matcha/Open-Poe-AI
-
 > **Open-source Opus Clip alternative — turn any long-form YouTube video into viral-ready vertical shorts** -> https://github.com/SamurAIGPT/AI-Youtube-Shorts-Generator
+
+> **Open-source multi-modal chatbot and Poe alternative** -> https://github.com/Anil-matcha/Open-Poe-AI
 
 ## 🌐 Try it Online — No Install Required
 
@@ -20,11 +20,7 @@
 
 Use all four studios (Image, Video, Lip Sync, Cinema) directly in your browser — no Node.js, no setup. Sign up for a free account to start generating. The hosted version is always up to date with the latest models.
 
-**Community:** Join [Discord](https://discord.gg/sqFYv8ugND) for discussions and support
-
 **Follow** the [creator](https://x.com/matchaman11) for updates
-
-**Happy Horse top video model coming soon:** Follow [Happy Horse AI](https://github.com/Anil-matcha/HappyHorse-1.0-API) for updates   
 
 ---
 
@@ -34,10 +30,10 @@ One-click installers — no Node.js or terminal required.
 
 | Platform | Download |
 |---|---|
-| macOS Apple Silicon (M1/M2/M3/M4) | [Open Generative AI-1.0.7-arm64.dmg](https://github.com/Anil-matcha/Open-Generative-AI/releases/download/v1.0.7/Open.Generative.AI-1.0.7-arm64.dmg) |
-| macOS Intel (x64) | [Open Generative AI-1.0.7.dmg](https://github.com/Anil-matcha/Open-Generative-AI/releases/download/v1.0.7/Open.Generative.AI-1.0.7.dmg) |
-| Windows (x64) | See latest `.exe` on the [v1.0.6 release](https://github.com/Anil-matcha/Open-Generative-AI/releases/tag/v1.0.6) — v1.0.7 ships Mac-only; the v1.0.6 Windows build still works for local sd.cpp inference. |
-| Linux (Ubuntu x64) | See [v1.0.6 release](https://github.com/Anil-matcha/Open-Generative-AI/releases/tag/v1.0.6) for `.AppImage` and `.deb`, or build locally with `npm run electron:build:linux`. |
+| macOS Apple Silicon (M1/M2/M3/M4) | [Open Generative AI-1.0.9-arm64.dmg](https://github.com/Anil-matcha/Open-Generative-AI/releases/download/v1.0.9/Open.Generative.AI-1.0.9-arm64.dmg) |
+| macOS Intel (x64) | [Open Generative AI-1.0.9.dmg](https://github.com/Anil-matcha/Open-Generative-AI/releases/download/v1.0.9/Open.Generative.AI-1.0.9.dmg) |
+| Windows (x64) | [Open Generative AI Setup 1.0.9.exe](https://github.com/Anil-matcha/Open-Generative-AI/releases/download/v1.0.9/Open.Generative.AI.Setup.1.0.9.exe) |
+| Linux (Ubuntu x64) | [v1.0.9 release](https://github.com/Anil-matcha/Open-Generative-AI/releases/tag/v1.0.9) (`.AppImage` / `.deb`), or build locally with `npm run electron:build:linux`. |
 
 All releases: [github.com/Anil-matcha/Open-Generative-AI/releases](https://github.com/Anil-matcha/Open-Generative-AI/releases)
 
@@ -391,6 +387,13 @@ Every image you upload is saved locally (URL + thumbnail) so you never upload th
 
 ### Setup
 
+> **Most users want the desktop app, not this dev path.** If you just want to run Open Generative AI on your machine, [download a prebuilt installer](#-download-desktop-app) instead — no Node.js required. The instructions below are for contributors building from source.
+
+Pick the entry point that matches your goal:
+
+- **Desktop app (Electron)** → `npm run electron:dev`
+- **Hosted web version (Next.js)** → `npm run dev`
+
 ```bash
 # Clone the repository (with submodules — required for the workflow + agent packages)
 git clone --recurse-submodules https://github.com/Anil-matcha/Open-Generative-AI.git
@@ -399,14 +402,19 @@ cd Open-Generative-AI
 # If you already cloned without --recurse-submodules, run this once:
 # git submodule update --init --recursive
 
-# Install dependencies (installs root + packages/studio workspace)
-npm install
+# Install dependencies + build workspace packages (studio, workflow, agents).
+# This step is REQUIRED — `npm install` alone is not enough; the workspaces
+# need to be built before either dev script will work.
+npm run setup
 
-# Start the development server
-npm run dev
+# Then start ONE of:
+npm run electron:dev   # Desktop app (Electron + Vite) — recommended
+npm run dev            # Hosted web version (Next.js) → http://localhost:3000
 ```
 
-Open `http://localhost:3000` in your browser. You'll be prompted to enter your Muapi API key on first use.
+You'll be prompted to enter your Muapi API key on first use (skip the key if you only plan to use local models).
+
+> **Troubleshooting — `Couldn't find a 'pages' directory`**: this means Next.js can't see the `app/` folder. Confirm you're running `npm run dev` from the repo root (the directory that contains `app/`, `package.json`, and `next.config.mjs`), and that you cloned with submodules. Re-run `npm run setup` if `packages/Vibe-Workflow` or `packages/Open-Poe-AI` are empty.
 
 ### Production Build
 

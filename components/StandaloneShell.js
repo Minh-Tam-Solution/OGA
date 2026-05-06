@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ImageStudio as CloudImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, MarketingStudio, WorkflowStudio, AgentStudio, getUserBalance } from 'studio';
+import { ImageStudio as CloudImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, MarketingStudio, WorkflowStudio, AgentStudio, AppsStudio, getUserBalance } from 'studio';
 import { ImageStudio as createLocalImageStudio } from '../src/components/ImageStudio.js';
 import axios from 'axios';
 import ApiKeyModal from './ApiKeyModal';
@@ -32,10 +32,11 @@ const TABS = [
   { id: 'lipsync', label: 'Lip Sync',          comingSoon: false },
   { id: 'cinema',  label: 'Cinema Studio',     comingSoon: false },
   { id: 'marketing', label: 'Marketing Studio', comingSoon: false },
-  // Workflows and Agents hidden in local mode
+  // Workflows, Agents, Apps hidden in local mode
   ...(_isLocal ? [] : [
     { id: 'workflows', label: 'Workflows' },
     { id: 'agents', label: 'Agents' },
+    { id: 'apps', label: 'Explore Apps' },
   ]),
 ];
 
@@ -77,6 +78,7 @@ export default function StandaloneShell() {
   const getInitialTab = () => {
     if (idFromParams || slug.includes('workflow')) return 'workflows';
     if (slug.includes('agents')) return 'agents';
+    if (slug.includes('apps')) return 'apps';
     const firstSegment = slug[0];
     if (firstSegment && TABS.find(t => t.id === firstSegment)) return firstSegment;
     return 'image';
@@ -101,6 +103,8 @@ export default function StandaloneShell() {
         setActiveTab('workflows');
     } else if (slug.includes('agents')) {
         setActiveTab('agents');
+    } else if (slug.includes('apps')) {
+        setActiveTab('apps');
     } else {
         const firstSegment = slug[0];
         if (firstSegment && TABS.find(t => t.id === firstSegment)) {
@@ -345,6 +349,7 @@ export default function StandaloneShell() {
         {activeTab === 'marketing' && <MarketingStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
         {activeTab === 'workflows' && <WorkflowStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />}
         {activeTab === 'agents' && <AgentStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />}
+        {activeTab === 'apps' && <AppsStudio apiKey={apiKey} />}
       </div>
 
       {/* Settings Modal */}

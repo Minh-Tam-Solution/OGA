@@ -15,9 +15,12 @@ const CONFIG_FILE = path.join(DATA_DIR, 'wan2gp.json');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ─── Catalog ──────────────────────────────────────────────────────────────────
-// `fn` is the Gradio function name Wan2GP exposes via /gradio_api/call/<fn>.
-// If the upstream Wan2GP build names them differently, change `fn` only —
-// hit <server>/?view=api to read real names.
+// `fn` is the *preferred* Gradio api_name Wan2GP exposes via /gradio_api/call/<fn>.
+// Wan2GP builds rename these between versions (and Pinokio packages drop them
+// entirely on some endpoints), so at probe time we pull /info from the server
+// and remap each catalog entry's `fn` to whatever is actually registered. The
+// `fnAliases` list lets us match newer/older variants; `family` is the final
+// fallback for fuzzy matching. See resolveFnNames() below.
 const WAN2GP_CATALOG = [
     {
         id: 'wan2gp:flux-dev',
@@ -27,6 +30,7 @@ const WAN2GP_CATALOG = [
         family: 'flux',
         provider: 'wan2gp',
         fn: 'flux',
+        fnAliases: ['flux_dev', 'flux_1_dev', 'flux1_dev', 'flux_image'],
         aspectRatios: ['1:1', '4:3', '3:4', '16:9', '9:16'],
         defaultSteps: 28,
         defaultGuidance: 3.5,
@@ -40,6 +44,7 @@ const WAN2GP_CATALOG = [
         family: 'qwen',
         provider: 'wan2gp',
         fn: 'qwen_image',
+        fnAliases: ['qwen', 'qwen_t2i', 'qwen_image_t2i'],
         aspectRatios: ['1:1', '4:3', '3:4', '16:9', '9:16'],
         defaultSteps: 30,
         defaultGuidance: 4.0,
@@ -53,10 +58,26 @@ const WAN2GP_CATALOG = [
         family: 'wan',
         provider: 'wan2gp',
         fn: 'wan22_t2v',
+        fnAliases: ['wan_2_2_t2v', 'wan22_text2video', 'wan_t2v', 'wan2_2_t2v', 't2v'],
         aspectRatios: ['16:9', '1:1', '9:16'],
         defaultSteps: 25,
         defaultGuidance: 5.0,
         tags: ['video', 'wan', 'text-to-video'],
+    },
+    {
+        id: 'wan2gp:wan22-i2v',
+        name: 'Wan 2.2 (Image-to-Video)',
+        description: 'Video — Wan 2.2 image-to-video. Provide a start frame.',
+        type: 'video',
+        family: 'wan',
+        provider: 'wan2gp',
+        fn: 'wan22_i2v',
+        fnAliases: ['wan_2_2_i2v', 'wan22_image2video', 'wan_i2v', 'wan2_2_i2v', 'i2v'],
+        needsImage: true,
+        aspectRatios: ['16:9', '1:1', '9:16'],
+        defaultSteps: 25,
+        defaultGuidance: 5.0,
+        tags: ['video', 'wan', 'image-to-video'],
     },
     {
         id: 'wan2gp:hunyuan-video',
@@ -66,6 +87,7 @@ const WAN2GP_CATALOG = [
         family: 'hunyuan',
         provider: 'wan2gp',
         fn: 'hunyuan_video',
+        fnAliases: ['hunyuan', 'hunyuan_t2v', 'hyvideo', 'hy_video'],
         aspectRatios: ['16:9', '1:1', '9:16'],
         defaultSteps: 30,
         defaultGuidance: 6.0,
@@ -79,6 +101,7 @@ const WAN2GP_CATALOG = [
         family: 'ltx',
         provider: 'wan2gp',
         fn: 'ltx_video',
+        fnAliases: ['ltx', 'ltx_t2v', 'ltxv', 'ltx_v', 'ltx_2', 'ltx2'],
         aspectRatios: ['16:9', '1:1', '9:16'],
         defaultSteps: 20,
         defaultGuidance: 3.0,
@@ -99,6 +122,16 @@ function normalizeUrl(url) { return (url || '').trim().replace(/\/+$/, ''); }
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let activeAbort = null;
+
+// Map of uploaded source URL → { path, url, orig_name } so generate() can
+// rehydrate the Gradio file descriptor when the renderer passes the URL back.
+const uploadedFiles = new Map();
+
+// Per-base cache of resolved api_names. Populated by probe(); consumed by
+// listModels() and generate(). Without this we'd hit FnIndexInferError on
+// every call because Wan2GP's api_name strings drift between releases.
+// Shape: Map<baseUrl, { apiNames: string[], resolved: Map<modelId, string|null> }>
+const fnResolutionCache = new Map();
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 function httpJson(urlStr, { method = 'GET', body = null, timeoutMs = 5000 } = {}) {
@@ -122,6 +155,65 @@ function httpJson(urlStr, { method = 'GET', body = null, timeoutMs = 5000 } = {}
     });
 }
 
+// Pull the list of registered api_names from Gradio's /info endpoint.
+// Gradio v4 exposes { named_endpoints: { "/api_name": {...}, ... } }; older
+// builds use the legacy /api or a flat dependencies array. We try /info first,
+// fall back to /api, and finally to /config['dependencies']. Returns an array
+// of bare api_name strings (no leading slash). Empty array means we couldn't
+// discover any — the server is reachable but doesn't expose a name index.
+async function fetchApiNames(base) {
+    const candidates = [`${base}/info`, `${base}/api`, `${base}/gradio_api/info`];
+    for (const candidate of candidates) {
+        try {
+            const res = await httpJson(candidate, { timeoutMs: 8000 });
+            if (res.status !== 200) continue;
+            const parsed = JSON.parse(res.body);
+            const named = parsed.named_endpoints || parsed.unnamed_endpoints || parsed;
+            if (named && typeof named === 'object') {
+                const keys = Object.keys(named).filter(k => k.startsWith('/'));
+                if (keys.length) return keys.map(k => k.replace(/^\/+/, ''));
+            }
+        } catch { /* try next */ }
+    }
+    // Legacy fallback — /config exposes dependencies[] with api_name fields.
+    try {
+        const res = await httpJson(`${base}/config`, { timeoutMs: 5000 });
+        if (res.status === 200) {
+            const cfg = JSON.parse(res.body);
+            const deps = Array.isArray(cfg.dependencies) ? cfg.dependencies : [];
+            return deps.map(d => d.api_name).filter(n => typeof n === 'string' && n && n !== 'false');
+        }
+    } catch { /* ignore */ }
+    return [];
+}
+
+// Map each catalog model to a real api_name on this server. Strategy:
+//   1. exact match on `fn`
+//   2. exact match on any `fnAliases` entry
+//   3. fuzzy: api_name contains the model's `family` substring
+//      (e.g. catalog wants `ltx_video`; server registered `ltx_2_t2v` → match)
+// Returns { resolved: Map<modelId, string|null>, apiNames: string[] }.
+function resolveFnNames(apiNames) {
+    const set = new Set(apiNames);
+    const resolved = new Map();
+    for (const m of WAN2GP_CATALOG) {
+        let hit = null;
+        if (set.has(m.fn)) hit = m.fn;
+        if (!hit && Array.isArray(m.fnAliases)) {
+            for (const a of m.fnAliases) { if (set.has(a)) { hit = a; break; } }
+        }
+        if (!hit && m.family) {
+            // Prefer names that also match the type (image vs video keyword).
+            const typeHint = m.type === 'video' ? /(video|t2v|i2v|v2v)/i : /(image|t2i|txt2img)/i;
+            const fuzzy = apiNames.find(n => n.toLowerCase().includes(m.family) && typeHint.test(n))
+                       || apiNames.find(n => n.toLowerCase().includes(m.family));
+            if (fuzzy) hit = fuzzy;
+        }
+        resolved.set(m.id, hit);
+    }
+    return { resolved, apiNames };
+}
+
 async function probe(url) {
     const base = normalizeUrl(url);
     if (!base) return { ok: false, error: 'URL is empty' };
@@ -129,16 +221,71 @@ async function probe(url) {
         const res = await httpJson(`${base}/config`, { timeoutMs: 5000 });
         if (res.status !== 200) return { ok: false, error: `HTTP ${res.status} from /config — is this a Gradio server?` };
         const cfg = JSON.parse(res.body);
-        return { ok: true, version: cfg.version || 'unknown' };
+        const apiNames = await fetchApiNames(base);
+        const { resolved } = resolveFnNames(apiNames);
+        fnResolutionCache.set(base, { apiNames, resolved });
+        const matched = [...resolved.values()].filter(Boolean).length;
+        return {
+            ok: true,
+            version: cfg.version || 'unknown',
+            apiNames,
+            matchedModels: matched,
+            totalModels: WAN2GP_CATALOG.length,
+        };
     } catch (e) {
         return { ok: false, error: e.message };
     }
 }
 
+// ─── Upload (Gradio v4 /upload) ───────────────────────────────────────────────
+// Renderer hands us { name, type, bytes:Uint8Array }. We POST as multipart to
+// <base>/upload?upload_id=<id>; Gradio replies with an array of server paths.
+// We expose those as a stable HTTP URL the renderer can preview AND stash the
+// raw path for generate() to feed back into Gradio's file descriptor.
+async function uploadFile({ name, type, bytes }) {
+    const { url } = readConfig();
+    if (!url) throw new Error('Wan2GP server URL not set. Open Settings → Local Models to configure.');
+    const base = normalizeUrl(url);
+
+    if (!bytes || !bytes.length) throw new Error('Empty file payload');
+    const safeName = name || 'upload.bin';
+    const mime = type || 'application/octet-stream';
+
+    const blob = new Blob([new Uint8Array(bytes)], { type: mime });
+    const form = new FormData();
+    form.append('files', blob, safeName);
+
+    const uploadId = Math.random().toString(36).slice(2, 12);
+    const res = await fetch(`${base}/upload?upload_id=${uploadId}`, { method: 'POST', body: form });
+    if (!res.ok) throw new Error(`Wan2GP upload failed: HTTP ${res.status}`);
+
+    const paths = await res.json();
+    const path = Array.isArray(paths) ? paths[0] : paths;
+    if (!path || typeof path !== 'string') throw new Error('Wan2GP upload returned no path');
+
+    const fileUrl = `${base}/file=${path.replace(/^\/+/, '')}`;
+    uploadedFiles.set(fileUrl, { path, url: fileUrl, orig_name: safeName, mime_type: mime });
+    return { url: fileUrl, path };
+}
+
 async function listModels() {
     const { url } = readConfig();
-    const reachable = url ? (await probe(url)).ok : false;
-    return WAN2GP_CATALOG.map(m => ({ ...m, ready: reachable }));
+    if (!url) return WAN2GP_CATALOG.map(m => ({ ...m, ready: false, unavailableReason: 'Wan2GP URL not set' }));
+    const base = normalizeUrl(url);
+    const probeRes = await probe(url); // populates fnResolutionCache
+    const cached = fnResolutionCache.get(base);
+    return WAN2GP_CATALOG.map(m => {
+        if (!probeRes.ok) return { ...m, ready: false, unavailableReason: probeRes.error };
+        const realFn = cached?.resolved.get(m.id) || null;
+        if (!realFn) {
+            return {
+                ...m,
+                ready: false,
+                unavailableReason: `Wan2GP server has no api_name matching "${m.fn}". Check Wan2GP version or load this model in its UI.`,
+            };
+        }
+        return { ...m, ready: true, fn: realFn };
+    });
 }
 
 // ─── Generate ─────────────────────────────────────────────────────────────────
@@ -233,21 +380,52 @@ async function generate(params, mainWindow) {
     const steps = params.steps ?? model.defaultSteps;
     const guidance = params.guidance_scale ?? model.defaultGuidance;
 
+    // Image input → resolve to a Gradio file descriptor if we uploaded it.
+    let imageDescriptor = null;
+    if (params.image) {
+        const cached = uploadedFiles.get(params.image);
+        if (cached) {
+            imageDescriptor = { path: cached.path, url: cached.url, orig_name: cached.orig_name, mime_type: cached.mime_type, meta: { _type: 'gradio.FileData' } };
+        } else if (typeof params.image === 'string') {
+            imageDescriptor = params.image; // raw URL — Gradio fetches it
+        } else {
+            imageDescriptor = params.image;
+        }
+    }
+    if (model.needsImage && !imageDescriptor) {
+        throw new Error(`${model.name} requires a start-frame image — upload one first.`);
+    }
+
     // Generic positional input — adjust upstream `fn` if signature differs.
     const payload = {
         data: [
             params.prompt || '',
             params.negative_prompt || '',
             width, height, steps, guidance, seed,
-            params.image || null,
+            imageDescriptor,
         ],
     };
+
+    // Resolve to whatever api_name the server actually exposes. Falls back to
+    // the catalog default so a user with a current Wan2GP build still works
+    // even if /info isn't reachable.
+    let cached = fnResolutionCache.get(base);
+    if (!cached) { await probe(url); cached = fnResolutionCache.get(base); }
+    const realFn = cached?.resolved.get(model.id) || model.fn;
+    if (cached && cached.apiNames.length && !cached.resolved.get(model.id)) {
+        const sample = cached.apiNames.slice(0, 8).join(', ');
+        throw new Error(
+            `${model.name}: Wan2GP server doesn't expose an api_name matching "${model.fn}". ` +
+            `Available endpoints: ${sample}${cached.apiNames.length > 8 ? '…' : ''}. ` +
+            `Make sure the model is loaded in Wan2GP, or update Wan2GP to a build that registers this api_name.`
+        );
+    }
 
     const ac = new AbortController();
     activeAbort = ac;
 
     try {
-        const result = await gradioCall(base, model.fn, payload, (p) => {
+        const result = await gradioCall(base, realFn, payload, (p) => {
             send({ status: 'generating', progress: p });
         }, ac.signal);
         activeAbort = null;
@@ -282,6 +460,7 @@ function register() {
     ipcMain.handle('wan2gp:list-models', () => listModels());
     ipcMain.handle('wan2gp:generate',    (_, params) => generate(params, getMainWindow()));
     ipcMain.handle('wan2gp:cancel-generation', () => cancelGeneration());
+    ipcMain.handle('wan2gp:upload-file', (_, payload) => uploadFile(payload));
 }
 
 module.exports = { register, WAN2GP_CATALOG };

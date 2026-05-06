@@ -1824,6 +1824,50 @@ export const t2iModels = [
     }
   },
   {
+    "id": "gpt-image-2",
+    "name": "Gpt Image 2",
+    "endpoint": "gpt-image-2-text-to-image",
+    "family": "gpt-2",
+    "inputs": {
+      "prompt": {
+        "examples": [
+          "A photorealistic product photo of a luxury watch resting on a slab of black marble, dramatic cinematic lighting with a soft rim glow, ultra-detailed metallic textures, shallow depth of field, studio quality."
+        ],
+        "description": "Text prompt describing the image. Up to 20,000 characters supported.",
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt"
+      },
+      "aspect_ratio": {
+        "enum": [
+          "auto",
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4"
+        ],
+        "title": "Aspect Ratio",
+        "name": "aspect_ratio",
+        "type": "string",
+        "description": "Aspect ratio of the output image.",
+        "default": "auto"
+      },
+      "resolution": {
+        "enum": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "title": "Resolution",
+        "name": "resolution",
+        "type": "string",
+        "description": "The target resolution of the generated image.",
+        "default": "2K"
+      }
+    }
+  },
+  {
     "id": "wan2.6-text-to-image",
     "name": "Wan2.6 Text To Image",
     "inputs": {
@@ -4554,6 +4598,53 @@ export const i2iModels = [
     }
   },
   {
+    "id": "gpt-image-2-edit",
+    "name": "Gpt Image 2 Edit",
+    "endpoint": "gpt-image-2-image-to-image",
+    "family": "gpt-2",
+    "imageField": "images_list",
+    "hasPrompt": true,
+    "maxImages": 16,
+    "inputs": {
+      "prompt": {
+        "type": "string",
+        "title": "Prompt",
+        "name": "prompt",
+        "description": "Text prompt describing the transformation. Up to 20,000 characters supported.",
+        "examples": [
+          "Transform these product photos into a professional lifestyle scene with warm cinematic lighting, soft natural shadows, and a clean modern background; keep brand details and proportions unchanged."
+        ]
+      },
+      "aspect_ratio": {
+        "type": "string",
+        "title": "Aspect Ratio",
+        "name": "aspect_ratio",
+        "description": "Aspect ratio of the output image.",
+        "enum": [
+          "auto",
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4"
+        ],
+        "default": "auto"
+      },
+      "resolution": {
+        "type": "string",
+        "title": "Resolution",
+        "name": "resolution",
+        "description": "The target resolution of the generated image.",
+        "enum": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "default": "2K"
+      }
+    }
+  },
+  {
     "id": "gpt-image-1.5-edit",
     "name": "Gpt Image 1.5 Edit",
     "endpoint": "gpt-image-1.5-edit",
@@ -5492,6 +5583,7 @@ export const i2vModels = [
     "endpoint": "kling-v2.1-master-i2v",
     "family": "kling-v2.1",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -5533,6 +5625,7 @@ export const i2vModels = [
     "endpoint": "kling-v2.1-standard-i2v",
     "family": "kling-v2.1",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -5574,6 +5667,7 @@ export const i2vModels = [
     "endpoint": "kling-v2.1-pro-i2v",
     "family": "kling-v2.1",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -5615,6 +5709,7 @@ export const i2vModels = [
     "endpoint": "wan2.2-image-to-video",
     "family": "wan2.2",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -5841,6 +5936,7 @@ export const i2vModels = [
     "endpoint": "minimax-hailuo-02-standard-i2v",
     "family": "minimax-2",
     "imageField": "image_url",
+    "lastImageField": "end_image_url",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -5882,6 +5978,7 @@ export const i2vModels = [
     "endpoint": "minimax-hailuo-02-pro-i2v",
     "family": "minimax-2",
     "imageField": "image_url",
+    "lastImageField": "end_image_url",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -5981,6 +6078,7 @@ export const i2vModels = [
     "endpoint": "seedance-lite-i2v",
     "family": "bytedance",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -6662,6 +6760,7 @@ export const i2vModels = [
     "endpoint": "veo3.1-image-to-video",
     "family": "veo3.1",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -6712,6 +6811,7 @@ export const i2vModels = [
     "endpoint": "veo3.1-fast-image-to-video",
     "family": "veo3.1",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -6762,6 +6862,7 @@ export const i2vModels = [
     "endpoint": "veo3.1-lite-image-to-video",
     "family": "veo3.1",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -7342,6 +7443,7 @@ export const i2vModels = [
     "endpoint": "kling-o1-image-to-video",
     "family": "kling-o1",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -7662,6 +7764,7 @@ export const i2vModels = [
     "endpoint": "kling-o1-standard-image-to-video",
     "family": "kling-o1",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -7734,6 +7837,7 @@ export const i2vModels = [
     "endpoint": "seedance-v1.5-pro-i2v",
     "family": "seedance-v1.5-pro",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -7804,6 +7908,7 @@ export const i2vModels = [
     "endpoint": "seedance-v1.5-pro-i2v-fast",
     "family": "seedance-v1.5-pro",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -7914,6 +8019,7 @@ export const i2vModels = [
     "endpoint": "kling-v3.0-pro-image-to-video",
     "family": "kling-v3.0",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {
@@ -7950,6 +8056,7 @@ export const i2vModels = [
     "endpoint": "kling-v3.0-standard-image-to-video",
     "family": "kling-v3.0",
     "imageField": "image_url",
+    "lastImageField": "last_image",
     "hasPrompt": true,
     "inputs": {
       "prompt": {

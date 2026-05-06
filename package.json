@@ -3,7 +3,7 @@
   "description": "NQH Creative Studio - Self-hosted AI creative studio for NQH/MTS employees",
   "homepage": "https://github.com/Anil-matcha/Open-Generative-AI",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.10",
   "workspaces": [
     "packages/studio",
     "packages/Vibe-Workflow/packages/workflow-builder",

@@ -345,6 +345,13 @@ export class MuapiClient {
             }
         }
 
+        // Optional end-frame image — only for models declaring lastImageField.
+        // Server-side param name varies (last_image vs end_image_url).
+        const lastImageField = modelInfo?.lastImageField;
+        if (lastImageField && params.last_image) {
+            finalPayload[lastImageField] = params.last_image;
+        }
+
         if (params.aspect_ratio) finalPayload.aspect_ratio = params.aspect_ratio;
         if (params.duration) finalPayload.duration = params.duration;
         if (params.resolution) finalPayload.resolution = params.resolution;
@@ -490,7 +497,7 @@ export class MuapiClient {
         if (params.audio_url) finalPayload.audio_url = params.audio_url;
         if (params.image_url) finalPayload.image_url = params.image_url;
         if (params.video_url) finalPayload.video_url = params.video_url;
-        if (params.prompt) finalPayload.prompt = params.prompt;
+        if (modelInfo?.hasPrompt) finalPayload.prompt = params.prompt || '';
         if (params.resolution) finalPayload.resolution = params.resolution;
         if (params.seed !== undefined && params.seed !== -1) finalPayload.seed = params.seed;
 
