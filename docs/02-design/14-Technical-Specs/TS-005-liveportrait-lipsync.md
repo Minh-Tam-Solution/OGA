@@ -2,10 +2,11 @@
 ts_id: TS-005
 title: "LivePortrait Lip Sync Endpoint"
 ts_version: "1.0.0"
-status: Proposed
+status: Superseded
 stage: "02-design"
 owner: "@architect"
 created: 2026-05-05
+last_updated: 2026-05-06
 references:
   - ADR-005 (docs/02-design/01-ADRs/ADR-005-lipsync-architecture.md)
   - ADR-003 (docs/02-design/01-ADRs/ADR-003-hot-swap-architecture.md)
@@ -13,9 +14,12 @@ references:
 gate: G2
 ---
 
-# TS-005: LivePortrait Lip Sync Endpoint
+# TS-005: LivePortrait Lip Sync Endpoint (Archived for Reference)
 
 ## 1. Overview
+
+> Superseded by Sprint 9 decision in `ADR-005`: Lip Sync remains cloud-only in current phase.
+> This document is retained as historical implementation reference only and is not an active build target.
 
 Add lip sync video generation to `local-server/server.py` via LivePortrait (MIT).
 Endpoint accepts image/video + audio, returns lip-synced MP4 video. Uses RetinaFace

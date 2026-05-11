@@ -8,7 +8,7 @@ stage: "00-foundation"
 category: functional
 owner: "@pm"
 created: 2026-04-26
-last_updated: 2026-04-26
+last_updated: 2026-05-09
 ---
 
 # Business Case — Open-Generative-AI (NQH Creative Studio)
@@ -26,13 +26,14 @@ MLX-native)** runs on the team's existing Mac mini M4 Pro 24 GB hardware at 34�
 512×512 with zero per-image cost. The business case for self-hosted AI generation rests on three
 pillars:
 
-### 1.1 Cost Elimination
+### 1.1 Cost Reduction with Hybrid Runtime
 
 Muapi.ai charges approximately $0.02–0.05 per image. At current team usage patterns, this
 produces a monthly bill of $400–600. That spend scales linearly with headcount and campaign
-volume — both of which are projected to grow in 2026–2027. Switching to local inference on
-hardware already purchased eliminates marginal generation cost entirely. The economic model
-shifts from **variable OpEx** to a fixed, one-time CapEx already sunk into the Mac mini M4 Pro.
+volume — both of which are projected to grow in 2026–2027. The current direction is a
+hybrid runtime: local image workloads on owned hardware (GPU Server S1 and Mac Mini), cloud only
+for workloads not yet viable locally (video/cinema/lipsync). The economic model shifts from
+mostly **variable OpEx** to controlled hybrid spend.
 
 ### 1.2 Data Governance Alignment
 
@@ -109,8 +110,9 @@ platform:
 
 ### 3.1 Tier 1 — AI Generation Engine
 
-Local inference stack running on Mac Mini M4 Pro 48 GB:
-- **Image generation:** Flux Schnell (Diffusers, MPS backend)
+Local inference stack running primarily on GPU Server S1 (CUDA), with Mac Mini M4 Pro 48 GB
+as supplementary node:
+- **Image generation:** Flux Schnell (Diffusers, CUDA-first on GPU server)
 - **Background removal:** RMBG-2.0 (local, zero API cost)
 - **Hot-swap pipeline management:** Switch between Image/Marketing/Video pre-processing without
   server restart
@@ -120,7 +122,15 @@ Local inference stack running on Mac Mini M4 Pro 48 GB:
 Next.js-based studio interface that surfaces AI capabilities to non-technical creative staff:
 - Image Studio — prompt-to-image with local inference
 - Marketing Studio — multi-asset ad campaign generation
-- Video Studio — cloud-hybrid video generation (fal.ai for heavy GPU workloads)
+- Video Studio — local video generation (Wan2.1, LTX-Video) + cloud fallback (Seedance, Kling)
+- Post-Production Studio (Sprint 12) — OpenReel video editor at `editor.studio.nhatquangholding.com`
+- Voice Studio (Sprint 12-13) — Draft to Take TTS/audio production companion on S1
+
+### 3.3 Tier 3 — MOP/BAP Boundary
+
+- **MOP** owns post-production (edit, voice, distribute) — companion tools on S1
+- **BAP** owns social publishing + employee advocacy — Postiz fork, untouched by OGA
+- Rule: each tool owns one verb; no generative surface duplication across tiers
 
 ### 3.3 MOP Phase A Timeline
 
@@ -128,7 +138,31 @@ Next.js-based studio interface that surfaces AI capabilities to non-technical cr
 |-----------|-------------|-------------|
 | Phase A kick-off | 05/05/2026 | Sprint 6 plan approved |
 | Sprint 6 complete | 06/16/2026 | Hot-swap + RMBG + Marketing/Video tabs |
+| Sprint 10 complete | 05/06/2026 | Wan2.1 + LTX-Video local video integration |
+| Sprint 11 complete | 05/20/2026 | OpenReel + IndexTTS spikes evaluated |
 | Phase A close | 06/16/2026 | Production readiness for multi-studio |
+
+---
+
+## 5. External Repo Integration (New — Sprint 11)
+
+### 5.1 OpenReel Video (Post-Production)
+
+MIT-licensed client-side video editor fills the "edit" gap: Gen → Edit → Export. Deployed as standalone subdomain on S1, zero marginal cost.
+
+### 5.2 Draft to Take / IndexTTS (Audio Production)
+
+MIT launcher + conditional commercial model weights. Multi-speaker TTS, emotion, SFX, music mixing. Companion microservice on S1, zero per-minute cost vs ElevenLabs cloud ($0.30/min).
+
+### 5.3 Boundary Economics
+
+| Capability | Before (cloud) | After (local + companion) |
+|------------|---------------|--------------------------|
+| Video editing | CapCut Pro ~$70/year/user | OpenReel $0 (MIT) |
+| TTS voiceover | ElevenLabs ~$0.30/min | IndexTTS $0 (local inference) |
+| SFX/ambience | Epidemic Sound subscription | Woosh-DFlow/MusicGen local |
+
+> **Cumulative effect:** Zero marginal cost across Gen + Edit + Voice pipeline.
 
 ---
 
@@ -174,7 +208,7 @@ Next.js-based studio interface that surfaces AI capabilities to non-technical cr
 
 ### 4.5 When Cloud Still Makes Sense
 
-- **Video generation** — GPU requirements exceed Mac Mini capabilities (A100/H100 workloads)
+- **Video generation** — still cloud-routed for reliability/cost control in current phase
 - **Burst capacity** — campaign launches needing 100k+ images in < 24 hours
 - **Exotic models** — models not yet ported to MPS/MLX (e.g., Sora, Kling)
 
@@ -187,19 +221,21 @@ cloud-based video generation while keeping image generation entirely local.
 
 | Risk | Mitigation |
 |------|-----------|
-| Hardware failure (Mac Mini) | AppleCare + cold spare strategy; cloud fallback path exists |
+| Hardware failure (GPU Server or Mac Mini) | Dual-node fallback (GPU Server S1 and Mac Mini) + cloud fallback path |
 | Model quality gap vs cloud | Track FID/CLIP scores quarterly; upgrade models as community releases improve |
 | RAM exhaustion under load | Hot-swap architecture (Sprint 6) ensures only one pipeline loaded at a time |
-| MPS backend instability | CPU offload fallback validated in Sprint 5; Diffusers community actively fixing MPS issues |
+| CUDA/MPS backend variance across environments | Device auto-detection + workload-specific routing (image local, video/lipsync cloud) |
+| External repo beta stability | Pin to commit SHA; quarterly re-evaluation; fork if upstream abandoned |
+| GHCR supply-chain risk (IndexTTS) | Pin image digest; local registry mirror; exit plan to bare IndexTTS2 |
+| VRAM coexistence (video + TTS) | VRAM-arbiter design: CPU-fallback or queue when GPU saturated |
 
 ---
 
 ## 6. Recommendation
 
-**Proceed with full deployment on Mac Mini M4 Pro 48 GB** as the production inference server for
-NQH Creative Studio. The economic case is unambiguous: the hardware pays for itself in under
-4 months and delivers $15k+ in savings over 3 years. The MOP Phase A timeline (6 weeks) is
-achievable given Sprint 5's successful validation of the core inference stack.
+**Proceed with GPU Server S1 as primary inference runtime** and keep Mac Mini M4 Pro 48 GB as
+supporting node for image workloads and fallback capacity. This keeps local cost advantages while
+preserving delivery reliability for workloads that remain cloud-only in the current phase.
 
 **Decision required:** None — hardware purchased, POC validated, Sprint 6 plan approved.
 **Next action:** Execute Sprint 6 (hot-swap + RMBG + Marketing/Video tabs) per MOP Phase A plan.

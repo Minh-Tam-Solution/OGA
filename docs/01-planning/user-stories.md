@@ -8,7 +8,7 @@ stage: "01-planning"
 category: user-stories
 owner: "@pm"
 created: 2026-04-26
-last_updated: 2026-05-05
+last_updated: 2026-05-09
 gate: G1
 references:
   - docs/01-planning/requirements.md
@@ -254,7 +254,7 @@ Scenario: Handle cloud API failure gracefully
 
 ## Sprint 8 User Stories
 
-### US-LIPSYNC — Content Creator Creates Lip-Synced Video Locally
+### US-LIPSYNC — Content Creator Creates Lip-Synced Video (Cloud Mode)
 
 **References:** FR-S8-01 (LivePortrait), FR-S8-02 (face detection), NFR-2, NFR-9
 **Scope reference:** MOP Phase A — Lip Sync Studio
@@ -264,8 +264,8 @@ Scenario: Handle cloud API failure gracefully
 #### User Story
 
 As a **Content Creator**, I want to generate lip-synced videos from a portrait image
-and audio clip locally, so that I can create talking-head content without cloud API cost
-and without sending face data to external services.
+and audio clip via cloud models, so that I can produce talking-head content reliably
+while local lip-sync models remain unviable for this phase.
 
 #### Acceptance Criteria (BDD)
 
@@ -274,10 +274,9 @@ Scenario: Generate lip-synced video from image + audio
   GIVEN I am in the Lip Sync Studio with a portrait image uploaded
   AND I have uploaded a 5-second audio clip
   WHEN I click "Generate"
-  THEN the system detects the face in the portrait using RetinaFace (MIT)
-  AND generates a lip-synced video using LivePortrait (MIT)
-  AND returns an MP4 video within 30 seconds
-  AND no external API call is made
+  THEN the system routes the request to the configured cloud lip-sync provider
+  AND returns an MP4 video when processing completes
+  AND shows cloud execution status to the user
 
 Scenario: Face detection fails gracefully
   GIVEN I upload an image with no clear face (e.g., landscape photo)
@@ -305,7 +304,7 @@ Scenario: Local/cloud mode switching
 #### User Story
 
 As a **Content Creator**, I want to access the Lip Sync Studio tab directly, so that I
-can use both local and cloud lip sync models from one interface.
+can use cloud lip sync models in a consistent UI while local mode shows clear guidance.
 
 #### Acceptance Criteria (BDD)
 
@@ -315,7 +314,7 @@ Scenario: Navigate to Lip Sync Studio
   WHEN I click the "Lip Sync" tab in the main navigation
   THEN the Lip Sync Studio interface loads
   AND displays both Image mode and Video mode options
-  AND shows available models (local LivePortrait + cloud models)
+  AND shows cloud model options for generation
 
 Scenario: Dual mode — Image and Video input
   GIVEN I am in Lip Sync Studio
@@ -362,6 +361,157 @@ Scenario: Text-to-speech-to-lip-sync pipeline
 | US-RMBG | 6 | FR-C02, NFR-2, NFR-9 | Must Have | Marketing Team Member | Image (local) |
 | US-MARKETING-TAB | 6 | FR-C03, NFR-1 | Must Have | Marketing Team Member | Marketing (local) |
 | US-VIDEO-TAB | 6 | FR-C04, NFR-1 | Should Have | Content Creator | Video (cloud) |
-| US-LIPSYNC | 8 | FR-S8-01, FR-S8-02, NFR-2, NFR-9 | Must Have | Content Creator | Lip Sync (local) |
-| US-LIPSYNC-TAB | 8 | FR-S8-03, NFR-1 | Must Have | Content Creator | Lip Sync (local+cloud) |
+| US-LIPSYNC | 8 | FR-S8-01, FR-S8-02, NFR-2, NFR-9 | Must Have | Content Creator | Lip Sync (cloud) |
+| US-LIPSYNC-TAB | 8 | FR-S8-03, NFR-1 | Must Have | Content Creator | Lip Sync (cloud-first) |
 | US-TTS-LIPSYNC | 8 | FR-S8-04, NFR-2 | Could Have | Content Creator | Voice + Lip Sync |
+
+---
+
+## Sprint 11 User Stories
+
+### US-POSTPROD — Content Creator Edits Generated Video
+
+**References:** FR-S11-01
+**Scope reference:** ADR-006, MOP Post-Production boundary
+**Priority:** Must Have (spike)
+**Sprint:** 11
+
+#### User Story
+
+As a **Content Creator**, I want to edit a video I just generated in OGA Video Studio,
+so that I can add text overlays, transitions, and music without downloading to my
+machine and opening CapCut.
+
+#### Acceptance Criteria (BDD)
+
+```gherkin
+Scenario: Open generated video in Post-Production editor
+  GIVEN I have a completed video generation in OGA Video Studio
+  WHEN I click "Edit in Post-Production"
+  THEN the system exports the MP4 to a temporary URL
+  AND opens editor.studio.nhatquangholding.com with the video pre-loaded
+  AND I can add text overlays, transitions, and audio
+  AND I can export the edited MP4 back to OGA gallery
+```
+
+### US-VOICE — Marketing Manager Creates Voiceover from Script
+
+**References:** FR-S11-02
+**Scope reference:** ADR-007, MOP Voice boundary
+**Priority:** Must Have (spike)
+**Sprint:** 11
+
+#### User Story
+
+As a **Marketing Manager**, I want to type a script and have it converted to
+professional voiceover with emotion and background music, so that I can create
+audio content for ads without recording equipment or cloud TTS costs.
+
+#### Acceptance Criteria (BDD)
+
+```gherkin
+Scenario: Generate Vietnamese voiceover from script
+  GIVEN I am in Voice Studio with a script typed in Vietnamese
+  WHEN I select a speaker voice and click "Generate Audio"
+  THEN the system produces a WAV/MP3 file in <30 seconds
+  AND the voice quality is rated "acceptable" by Marketing Manager (≥3/5 samples)
+  AND no cloud API call is made
+```
+
+### US-VRAM — IT Admin Monitors GPU Resource Sharing
+
+**References:** FR-S11-03
+**Scope reference:** ADR-007 §VRAM Budget & Scheduling
+**Priority:** Must Have
+**Sprint:** 11
+
+#### User Story
+
+As an **IT Admin**, I want to ensure video generation and TTS services don't
+compete for GPU memory and crash, so that the server remains stable under mixed
+workloads.
+
+#### Acceptance Criteria (BDD)
+
+```gherkin
+Scenario: TTS queues when video pipeline is loaded
+  GIVEN Wan2.1 pipeline is loaded in OGA (VRAM ~11GB)
+  WHEN a user requests TTS generation
+  THEN the system checks available VRAM
+  AND if VRAM > 28GB total allocated, the TTS request is queued or routed to CPU
+  AND no Out-Of-Memory error occurs
+```
+
+---
+
+## Sprint 12–13 User Stories — Audio Production
+
+### US-TTS-01 — Marketing Manager Generates Voiceover
+
+**References:** FR-A01 (Audio Studio UI), FR-A02 (TTS synthesis), ADR-007 v4
+**Priority:** Must Have (Sprint 12)
+**Status:** ✅ COMPLETE (G2-audio PASSED)
+
+#### User Story
+
+As a **Marketing Manager**, I want to generate Vietnamese voiceover from text script, so that I can add narration to video ads without hiring voice talent.
+
+#### Acceptance Criteria (BDD)
+
+```gherkin
+GIVEN I am in Voice Studio with a Vietnamese script
+WHEN I click "Generate Voice"
+THEN the system calls AI-Platform /api/v1/voice/tts/synthesize
+AND returns an audio URL within 5 seconds
+AND the audio plays back clearly in Vietnamese
+AND the engine used is Piper VAIS1000 (primary) or MeloTTS (fallback)
+```
+
+#### Sprint 12 Result
+- ✅ Piper primary validated (CEO + Hùng PASS)
+- ✅ MeloTTS fallback validated and callable via gateway
+- ✅ Track B consumer wrapper landed
+
+---
+
+### US-TTS-02 — Script Writer Avoids Initials in TTS Input
+
+**References:** FR-A03 (Text normalization), Sprint 13 brand-text guideline
+**Priority:** Should Have (Sprint 13)
+**Status:** ⏳ PLANNED
+
+#### User Story
+
+As a **Script Writer**, I want the system to warn me when my script contains abbreviations that TTS cannot pronounce clearly, so that I can rewrite them before generating audio.
+
+#### Acceptance Criteria (BDD)
+
+```gherkin
+GIVEN I enter a script containing "NQH" in Voice Studio
+WHEN I click "Preview" or "Generate"
+THEN the system highlights "NQH" with a warning tooltip:
+  "Initials may not be pronounced clearly. Consider spelling out: N Q H"
+AND allows me to continue or edit
+```
+
+---
+
+### US-TTS-03 — IT Admin Monitors TTS Service Health
+
+**References:** FR-A04 (Ops monitoring), ADR-007 runbook
+**Priority:** Could Have (Sprint 13)
+**Status:** ⏳ PLANNED
+
+#### User Story
+
+As an **IT Admin**, I want to see whether the AI-Platform voice service is healthy, so that I know if TTS generation will work before users complain.
+
+#### Acceptance Criteria (BDD)
+
+```gherkin
+GIVEN I open the Ops Dashboard
+WHEN the voice service is down or returning 503
+THEN I see a red indicator with last error timestamp
+AND a link to the AI-Platform PJM S118 ticket
+```
+

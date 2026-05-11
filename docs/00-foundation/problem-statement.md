@@ -8,7 +8,7 @@ stage: "00-foundation"
 category: functional
 owner: "@pm"
 created: 2026-04-26
-last_updated: 2026-04-26
+last_updated: 2026-05-09
 ---
 
 # Problem Statement — Open-Generative-AI (NQH Creative Studio)
@@ -27,7 +27,7 @@ cost**. The upstream repository (`github.com/Anil-matcha/Open-Generative-AI`) ha
 API endpoints throughout `src/lib/muapi.js` and `packages/studio/src/muapi.js`, making provider
 swapping non-trivial without a dedicated fork and integration layer.
 
-Three distinct pain points block the team from moving to self-hosted generation:
+Four distinct pain points block the team from moving to self-hosted generation:
 
 1. **Cost pain** — Muapi.ai per-request billing scales linearly with team usage; internal
    creative workflows are incompatible with pay-per-generation economics.
@@ -36,6 +36,9 @@ Three distinct pain points block the team from moving to self-hosted generation:
    to cloud endpoints even when a local model is registered in `src/lib/localModels.js`.
 3. **Data privacy** — Cloud submission of internal brand assets (unreleased product visuals,
    campaign concepts) to a third-party API conflicts with NQH/MTS data governance expectations.
+4. **Post-production gap** — After generating assets, users must leave OGA and open external
+   tools (CapCut, Premiere, ElevenLabs) to edit video or create voiceover. No unified
+   pipeline from Gen → Edit → Voice → Publish.
 
 ## 2. Stakeholders
 
@@ -64,13 +67,13 @@ POC feedback session (3 participants across marketing and design teams).
 | Availability | Dependent on Muapi.ai uptime SLA |
 | Provider flexibility | None — hardcoded endpoints in `src/lib/muapi.js` |
 
-### 3.2 Target State (Self-Hosted)
+### 3.2 Target State (Self-Hosted, GPU-First)
 
-| Dimension | Self-Hosted (Mac mini M4 Pro 24 GB) |
-|-----------|-------------------------------------|
-| CapEx | ~$1,300 (Mac mini hardware, one-time) |
-| OpEx (monthly) | ~$0 — electricity only |
-| Latency | 34–49 s/image @ 512×512 (POC measured) |
+| Dimension | Self-Hosted (GPU Server S1 + Mac Mini) |
+|-----------|----------------------------------------|
+| CapEx | GPU server available; Mac Mini as secondary node |
+| OpEx (monthly) | Low for image workloads; cloud used selectively for heavy video/lipsync |
+| Latency | ~10–20 s/image on GPU S1 (estimated), 34–49 s/image on Mac Mini |
 | Data privacy | All assets remain on-premises, LAN-only |
 | Availability | Controlled by internal IT; no third-party SLA |
 | Provider flexibility | Pluggable via `src/lib/localInferenceClient.js` + `localModels.js` |
@@ -102,9 +105,12 @@ evidence. The following metrics define what "solved" looks like at product deliv
 | Metric | Baseline (current) | Target (Phase 1 complete) |
 |--------|--------------------|---------------------------|
 | Per-image API cost | $0.02–0.05/image (cloud) | $0.00/image (self-hosted) |
+| Per-video API cost | $0.65–2.00/video (cloud) | $0.00/video (self-hosted Wan2.1/LTX) |
+| Per-minute TTS cost | $0.30/min (ElevenLabs) | $0.00/min (IndexTTS local) |
 | Monthly AI tooling OpEx | $400–600 | <$10 (electricity) |
-| Image generation latency | 5–15 s (cloud) | ≤60 s @ 512×512 local |
-| Data leaving premises | 100% of assets | 0% for image generation |
+| Image generation latency | 5–15 s (cloud) | ≤30 s on GPU server for 512×512, ≤60 s on Mac Mini fallback |
+| Video generation latency | 30–120 s (cloud) | ~10 s (LTX), ~130 s (Wan2.1) local |
+| Data leaving premises | 100% of assets | 0% for image/video/voice generation |
 | Provider swap feasibility | 0% — hardcoded | 100% — switchable via UI setting |
 | Team generation requests blocked by cost | ~30% (self-reported) | 0% |
 | Local engine availability (uptime) | N/A | ≥99% during business hours |
@@ -115,15 +121,23 @@ Secondary quality signal: end-user satisfaction score ≥4/5 in post-Phase-1 int
 
 ## 5. Validation Evidence
 
-### 5.1 Technical POC Results
+### 5.1 Technical POC Results and Deployment Findings
 
-POC executed by CEO (Tai Dang) on Mac mini M4 Pro 24 GB, macOS, using mflux v0.17.5:
+Initial POC was executed by CEO (Tai Dang) on Mac mini M4 Pro 24 GB, macOS, using mflux v0.17.5:
 
 - **Engine:** MLX-native Flux Schnell, 8-bit quantized
 - **Resolution tested:** 512×512
 - **Measured generation time:** 34–49 seconds per image
 - **Cost:** $0.00 per image (local inference, no API call)
 - **Conclusion:** Technically viable for internal daily use
+
+Sprint 9 handoff and deployment prep extended this baseline with GPU findings:
+
+- **GPU Server S1 (CUDA)** is now the primary runtime target for local inference deployment.
+- **Apple Silicon MPS remains valid for image workloads** but is not suitable for large diffusion video models.
+- **Video generation** now local via Wan2.1 + LTX-Video (Sprint 10, validated on RTX 5090).
+- **Post-production (edit, voice)** targeted for Sprint 11-13 via OpenReel + Draft to Take integration.
+- **Cinema/LipSync** remain cloud-first until local models pass spike gates.
 
 The local inference code path exists in `src/lib/localInferenceClient.js` and model registration
 in `src/lib/localModels.js`, confirming the upstream project has scaffolding for local engines.

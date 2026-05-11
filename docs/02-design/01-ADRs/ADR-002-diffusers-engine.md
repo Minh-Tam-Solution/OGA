@@ -41,6 +41,8 @@ memory management.
 | Models | Single model via `--model` flag | Curated registry, hot-swap |
 | Concurrency | Process isolation (safe) | `asyncio.Lock()` (single-gen) |
 | Kill switch | N/A | `INFERENCE_ENGINE=mflux` fallback |
+| Video Gen | Not supported | CogVideoX 5B via `CogVideoXPipeline` (16 frames, 720×480 max) |
+| Long tasks | Synchronous (risk 504 timeout) | Async job queue: `POST /api/v1/async-generate` + polling `GET /api/v1/jobs/{id}` |
 
 ### What Stays the Same
 
@@ -58,12 +60,16 @@ memory management.
 - Native img2img support (Flux2 Klein 4B `image` kwarg)
 - LoRA hot-swap possible (diffusers `load_lora_weights`)
 - Better observability: `torch.mps.current_allocated_memory()`
+- Video generation: CogVideoX 5B produces coherent 2-second MP4 clips locally on RTX 5090
+- Async queue eliminates 504 Gateway Timeout for long-running generations (~40s video gen)
 
 ### Negative
 - Server startup slower (~10-30s for model load vs instant with subprocess)
 - Larger Python dependency tree (diffusers + torch + peft)
 - Must pin exact diffusers commit (API unstable between releases)
 - Single-threaded generation (asyncio.Lock blocks concurrent requests)
+- Video requires resolution clamping (720×480 max) to fit 32GB VRAM; VAE tiling corrupts output
+- AnimateDiff disabled: diffusers 0.38.0 + RTX 5090 (Blackwell) produces noise across all dtype/scheduler combos
 
 ### Risks
 - MPS offload may be slower than mflux native MLX path (mitigated: 2x regression KPI)

@@ -6,6 +6,7 @@ status: Approved
 stage: "02-design"
 owner: "@architect"
 created: 2026-05-05
+last_updated: 2026-05-06
 references:
   - ADR-003 (docs/02-design/01-ADRs/ADR-003-hot-swap-architecture.md)
   - TS-002 (docs/02-design/14-Technical-Specs/TS-002-diffusers-pipeline.md)
@@ -21,6 +22,8 @@ Add hot-swap capability to `local-server/server.py`: unload the current Diffuser
 pipeline, reclaim memory, load a new pipeline — all without server restart. Expose
 via `POST /api/v1/swap-model` endpoint with state machine protection against
 concurrent access.
+
+Primary runtime target is GPU Server S1 (CUDA). MPS path remains supported for Mac fallback.
 
 ---
 
@@ -315,7 +318,7 @@ async def diffusers_generate(prompt, width, height, ...):
 
 ---
 
-## 7. MPS Memory Lifecycle
+## 7. Device Memory Lifecycle (CUDA/MPS)
 
 ### 7.1 Measurement Points
 
@@ -336,6 +339,7 @@ total_process_rss > 0.85 * physical   (BLOCK — refuse to load, return 503)
 ```
 
 The 85% cap is checked using `psutil.virtual_memory().percent` before loading.
+For CUDA hosts, also log `torch.cuda.memory_allocated()` and `torch.cuda.memory_reserved()`.
 
 ---
 
@@ -388,6 +392,16 @@ The 85% cap is checked using `psutil.virtual_memory().percent` before loading.
 
 Default if omitted: `"diffusers"` (backward compatible).
 
+### 8.3 Video Model Hot-Swap Notes
+
+CogVideoX 5B (`ram_gb: 18`) triggers the longest swap times (~15–20s load). The state machine remains the same, but:
+
+- Swap **from** CogVideoX → image model: full 18GB unload + new load
+- Swap **to** CogVideoX: expect 15–20s load on RTX 5090 from local SSD
+- Idle auto-unload (§10) prevents CogVideoX from permanently reserving VRAM
+
+Only one diffusers pipeline is loaded at a time. The LRU cache size on S1 remains `1`.
+
 ---
 
 ## 9. LRU Pipeline Cache (48GB Production)
@@ -398,6 +412,7 @@ Default if omitted: `"diffusers"` (backward compatible).
 PIPELINE_CACHE_SIZE = int(os.environ.get("PIPELINE_CACHE_SIZE", "1"))
 # 24GB MacBook: 1 (always swap)
 # 48GB Mac Mini: 2 (keep 2 warm)
+# 32GB RTX 5090 (S1): 1 (always swap — CogVideoX dominates VRAM)
 ```
 
 ### 9.2 Cache Structure
@@ -437,17 +452,40 @@ async def swap_model(target_config):
 
 ---
 
-## 10. Affected Files
+## 10. Idle Auto-Unload
+
+After 300 seconds of inactivity, the current diffusers pipeline is automatically unloaded to free VRAM:
+
+```python
+IDLE_UNLOAD_SECONDS = int(os.environ.get("IDLE_UNLOAD_SECONDS", "300"))
+
+async def _idle_unload_monitor():
+    while True:
+        await asyncio.sleep(60)
+        if pipeline_state == PipelineState.READY and idle_seconds() > IDLE_UNLOAD_SECONDS:
+            unload_pipeline()
+            pipeline_state = PipelineState.IDLE
+```
+
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| `IDLE_UNLOAD_SECONDS` | 300 | Seconds of inactivity before unload |
+
+This is especially important for CogVideoX 5B which peaks at ~30GB VRAM.
+
+---
+
+## 11. Affected Files
 
 | File | Change | Notes |
 |------|--------|-------|
-| `local-server/server.py` | Add state machine, dual locks, unload_pipeline(), swap endpoint, cache | Major (~120 lines added) |
+| `local-server/server.py` | Add state machine, dual locks, unload_pipeline(), swap endpoint, cache, idle unload | Major (~120 lines added) |
 | `local-server/models.json` | Add `model_type` field to each entry | Schema update |
 | `local-server/requirements-mac.txt` | Add `psutil` for memory cap check | Minor |
 
 ---
 
-## 11. Test Scenarios
+## 12. Test Scenarios
 
 | # | Scenario | Expected |
 |---|----------|----------|
@@ -462,6 +500,9 @@ async def swap_model(target_config):
 | 9 | RAM gate check after swap | delta <= 300MB within 5s |
 | 10 | LRU cache hit (48GB) | Instant swap, no load |
 | 11 | LRU eviction (48GB) | Oldest evicted, new loaded |
+| 12 | Idle unload after 300s | Pipeline state → IDLE, VRAM freed |
+| 13 | Swap to CogVideoX from idle | 200, ~15–20s load time |
+| 14 | Generate video during image gen | 409 (gen lock held) |
 
 ---
 

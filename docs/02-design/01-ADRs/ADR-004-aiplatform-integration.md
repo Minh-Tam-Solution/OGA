@@ -20,13 +20,17 @@ references:
 ## Context
 
 OGA server.py is MOP Tier 1 (AI Generation). AI-Platform gateway (S1 :8120) needs to
-route image generation requests to OGA on Mac Mini. Endpoint contract must be
+route image generation requests to OGA on GPU Server S1 (with Mac Mini as fallback). Endpoint contract must be
 OpenAI-compatible so frontend consumers (OpenWebUI, Dify, OGA Next.js) don't need to
 know whether backend is local or cloud.
 
+Cross-project requirement: this contract must remain compatible with BAP's existing
+AI-Platform auth pattern (`OPENAI_BASE_URL` + custom header `X-API-Key`) so both products
+can share the same gateway/security policy and observability model.
+
 ## Decision
 
-OGA server.py runs on Mac Mini at `PORT=8123` (configurable via env var).
+OGA server.py runs on GPU Server S1 at `PORT=8123` (configurable via env var).
 AI-Platform `image_models.yaml` routes to it with priority-based fallback.
 
 ### Endpoint Contract
@@ -76,14 +80,14 @@ OGA server does NOT add these headers — AI-Platform gateway adds them after pr
 | Layer | Mechanism | Owner |
 |-------|-----------|-------|
 | Dev (MacBook) | PIN cookie (`ACCESS_PIN` env) | OGA middleware.js |
-| Production (MOP) | `X-API-Key: sk-nqh-*` | AI-Platform gateway |
-| Internal (Mac Mini LAN) | No auth (firewall isolated) | IT Admin |
+| Production (MOP/BAP aligned) | `X-API-Key: sk-nqh-*` | AI-Platform gateway |
+| Internal (GPU Server/Mac Mini LAN) | No auth (firewall isolated) | IT Admin |
 
 ### Failure Modes
 
 | Failure | Detection | Fallback |
 |---------|-----------|----------|
-| Mac Mini down | Health check fail 3x | AI-Platform skips oga-local → fal-ai |
+| Primary local host down | Health check fail 3x | AI-Platform skips local provider → fal-ai |
 | OOM during generation | HTTP 507 | Same fallback |
 | Model swap in progress | HTTP 503 | Retry after 30s or cloud |
 
@@ -94,6 +98,10 @@ OGA server does NOT add these headers — AI-Platform gateway adds them after pr
 - Cloud fallback transparent to user
 - Cost attribution via AI-Platform (not OGA concern)
 
+### OGA–BAP Boundary (Content Pipeline)
+
+OGA owns **Gen → Edit → Voice → Lip Sync** (creative production). **Publish** (lịch đăng, Brand Ambassador, social scheduling) is owned by **BAP**. Final assets from OGA Post-Production / Voice Studio are exported to BAP via shared storage or API handoff. OGA does NOT become a social publishing suite — this boundary is enforced to prevent scope creep into BAP's domain.
+
 ### Negative
 - Mac Mini must have static LAN IP (IT Admin configure)
 - Health check latency adds ~100ms to routing decision
@@ -101,7 +109,7 @@ OGA server does NOT add these headers — AI-Platform gateway adds them after pr
 ### Deployment Config (Sprint 6 deliverable)
 
 ```bash
-# .env.production (Mac Mini)
+# .env.production (GPU Server S1 or Mac Mini fallback)
 PORT=8123
 HOST=0.0.0.0
 INFERENCE_ENGINE=diffusers

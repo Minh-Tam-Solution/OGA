@@ -7,7 +7,7 @@ tier: STANDARD
 stage: "02-design"
 owner: "@architect"
 created: 2026-04-26
-last_updated: 2026-04-26
+last_updated: 2026-05-06
 gate: G2
 ---
 
@@ -24,9 +24,9 @@ Proposed — pending CTO review and G2 approval.
 NQH/MTS operates an internal marketing, design, and content team that generates AI-assisted
 creative assets (images, videos, lip-sync, cinema-grade compositions) daily. The current
 production workflow is entirely cloud-dependent on **Muapi.ai**, which charges per-request.
-A validated POC confirmed that **Flux Schnell (mflux v0.17.5, MLX-native)** runs on a
-Mac mini M4 Pro 24 GB at 34–49 s/image @ 512×512 with **zero per-image cost**, making the
-business case for self-hosted inference clear.
+A validated POC confirmed that local image inference is viable on Mac hardware, and Sprint 9
+deployment prep established **GPU Server S1 (CUDA)** as the stronger primary runtime for local
+inference. Mac Mini remains a valid fallback node for image workloads.
 
 The upstream repository (`github.com/Anil-matcha/Open-Generative-AI`) hardcodes Muapi.ai
 API endpoints throughout `src/lib/muapi.js` and `packages/studio/src/muapi.js`. Three
@@ -40,7 +40,7 @@ structural problems block a straightforward provider swap:
 3. **Data governance risk** — submitting unreleased brand assets to a third-party API
    violates NQH/MTS data governance expectations.
 
-This ADR establishes the architectural baseline for Sprint 1: a self-hosted, local-inference
+This ADR establishes the architectural baseline: a self-hosted, local-inference
 fork of Open-Generative-AI, operating on the LAN under the "NQH Creative Studio" brand,
 with a provider abstraction layer decoupling the UI from any specific inference backend.
 
@@ -53,9 +53,8 @@ with a provider abstraction layer decoupling the UI from any specific inference 
 The existing codebase is a **Next.js** application (`next` in `package.json`). The fork
 preserves this choice. All server-side proxy routes (local inference relay, model download
 orchestration) are implemented as Next.js API routes (`/api/*`) to avoid introducing a
-separate backend process in Phase 1. The Mac mini runs `npm run dev` (development) or
-`npm run build && npm start` (production) directly; no Docker or reverse proxy is required
-in Sprint 1.
+separate backend process in Phase 1. Runtime host is environment-dependent: GPU Server S1 is
+primary for deployment, while Mac Mini remains supported for fallback and local validation.
 
 ### 2. Provider Abstraction Layer — `src/lib/providerConfig.js` (new file)
 
@@ -64,4 +63,11 @@ new `providerConfig.js` module exports a `getProvider()` function that returns e
 local inference client or the Muapi client. All components and lib files that currently
 import from `muapi.js` will import from `providerConfig.js` instead, eliminating all
 direct provider references from UI components.
+
+### 3. Hardware Baseline (Revised)
+
+- **Primary host:** GPU Server S1 (Ubuntu 22.04+, CUDA 12.1+, NVIDIA driver 535+)
+- **Fallback host:** Mac Mini M4 Pro (MPS path)
+- **Device policy:** `cuda` if available, else `mps`, else `cpu`
+- **Workload policy:** image/marketing local-first, video/cinema/lipsync cloud-first in current phase
 

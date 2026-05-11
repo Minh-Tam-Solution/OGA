@@ -6,6 +6,7 @@ status: Approved
 stage: "02-design"
 owner: "@architect"
 created: 2026-05-05
+last_updated: 2026-05-06
 references:
   - ADR-003 (docs/02-design/01-ADRs/ADR-003-hot-swap-architecture.md)
   - TS-003 (docs/02-design/14-Technical-Specs/TS-003-pipeline-hot-swap.md)
@@ -21,7 +22,8 @@ Add background removal as an always-resident utility service in
 model to remove backgrounds from images, producing PNG with alpha channel.
 
 This is classified as a `utility` model type (ADR-003): loaded at startup,
-never swapped, coexists with the active diffusers pipeline.
+never swapped, coexists with the active diffusers pipeline on either CUDA (GPU server)
+or MPS (Mac fallback) runtime.
 
 ---
 
@@ -60,7 +62,16 @@ Add to `local-server/requirements-mac.txt`.
 | Input/output image buffers | ~200-400MB (depends on resolution) |
 | **Total peak** | **~1-2GB** |
 
-### 3.2 Co-Residency Budget (24GB MacBook M4 Pro)
+### 3.2 Co-Residency Budget (GPU Server S1 Baseline)
+
+| Component | RAM/VRAM |
+|-----------|----------|
+| OS + services | Host-dependent |
+| Diffusers pipeline (CUDA) | ~4-8GB VRAM/model class |
+| RMBG utility (CPU ONNX) | ~1-2GB system RAM |
+| **Result** | Low contention (RMBG on CPU, diffusion on GPU) |
+
+### 3.3 Co-Residency Budget (24GB MacBook M4 Pro Fallback)
 
 | Component | RAM |
 |-----------|-----|
@@ -75,7 +86,7 @@ This is within the 85% RAM cap (85% of 24GB = 20.4GB for our process). The
 diffusers peak is transient (only during generation), so actual steady-state
 for our server process is ~8GB (RMBG + diffusers idle components).
 
-### 3.3 Co-Residency Budget (48GB Mac Mini M4 Pro)
+### 3.4 Co-Residency Budget (48GB Mac Mini M4 Pro)
 
 | Component | RAM |
 |-----------|-----|

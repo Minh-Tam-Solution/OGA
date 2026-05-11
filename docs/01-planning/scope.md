@@ -8,7 +8,7 @@ stage: "01-planning"
 category: scope
 owner: "@pm"
 created: 2026-04-26
-last_updated: 2026-04-26
+last_updated: 2026-05-09
 gate: G0.1
 references:
   - docs/00-foundation/problem-statement.md
@@ -39,7 +39,7 @@ Deliver a working local-inference fork of Open-Generative-AI that:
 1. Generates images end-to-end via the on-premises mflux/sd.cpp server (zero cloud API calls).
 2. Presents "NQH Creative Studio" branding to internal users.
 3. Hides or stubs all features not ready for Phase 1, so the UI ships without broken states.
-4. Documents `.env` configuration so IT Admin (dvhiep) can deploy on the Mac mini M4 Pro 24 GB.
+4. Documents `.env` configuration so IT Admin (dvhiep) can deploy on GPU Server S1 and Mac Mini.
 
 ---
 
@@ -118,6 +118,30 @@ Sprint 1 is out of scope and must not be merged. Raising them as scope-change re
 
 ---
 
+## 4. Sprint 11 Scope
+
+### 4.1 In Scope — Sprint 11
+
+| Item | File(s) Affected | Acceptance Signal |
+|------|-----------------|-------------------|
+| OpenReel deployment spike on S1 | `oga-editor.service`, Nginx config | Subdomain `editor.studio.nhatquangholding.com` healthy; smoke test passes |
+| IndexTTS legal pre-clear | spike report §Legal | BETA_TERMS.md / THIRD_PARTY_NOTICES.md summarized; CEO sign-off if ambiguity |
+| IndexTTS Linux smoke test | Docker Compose on S1 | All 5 containers healthy; TTS returns WAV in <30s |
+| IndexTTS VRAM coexistence test | spike report §VRAM | `nvidia-smi` log shows no OOM with Wan2.1 + IndexTTS concurrent |
+| IndexTTS Vietnamese quality A/B | spike report §Quality | ≥3/5 samples rated "acceptable" by Marketing Manager |
+| VRAM-arbiter spec | ADR-007 update | Spec document approved by @architect + @cto before any integration code |
+
+### 4.2 Out of Scope — Sprint 11
+
+| Item | Reason | Target |
+|------|--------|--------|
+| OpenReel code merge into OGA monorepo | CTO-locked: subdomain deployment only | Never — always standalone |
+| OpenShorts integration | CPO+CTO rejected | Never — UX reference only |
+| IndexTTS integration code (real merge) | Must pass 3 preconditions first | S12-13 IF preconditions pass |
+| BAP social publishing features | BAP owns Publish boundary | BAP roadmap |
+
+---
+
 ## 5. Constraints (Non-Negotiable)
 
 These constraints are fixed by the deployment environment and business policy. They are not
@@ -127,17 +151,19 @@ negotiable within Sprint 1 and must be respected by all implementation decisions
 
 | Constraint | Value | Source |
 |------------|-------|--------|
-| Inference host | Mac mini M4 Pro, 24 GB unified memory, macOS | Actual hardware (already purchased) |
-| Inference engine | mflux v0.17.5 (MLX-native) or sd.cpp — both Apple Silicon optimised | POC validation — see `docs/00-foundation/problem-statement.md §5.1` |
-| Max resolution (Phase 1) | 512×512 px (proven at 34–49 s); higher resolutions untested | POC constraint |
-| No GPU server | Wan2GP / remote GPU node not available in Sprint 1 | Hardware not provisioned |
+| Inference host | GPU Server S1 (Ubuntu + CUDA) as primary; Mac Mini M4 Pro as fallback | Sprint 9 handoff + deployment direction |
+| Inference engine | Diffusers in-process with device auto-detect (`cuda` preferred, then `mps`) | Server design + deployment prep |
+| Max resolution (Phase 1) | 512×512 baseline; 1024×1024 allowed where memory headroom is verified | Sprint 5/9 evidence |
+| Video local capability | ✅ Validated — Wan2.1 + LTX-Video active on S1 (Sprint 10) | Sprint 10 spike report |
+| Post-production local capability | Spike-evaluate OpenReel (Sprint 11) | Sprint 11 spike report |
+| Audio production local capability | Spike-evaluate IndexTTS (Sprint 11) | Sprint 11 spike report |
 
 ### 5.2 Network
 
 | Constraint | Value | Source |
 |------------|-------|--------|
 | Deployment network | LAN-only; no public internet exposure in Phase 1 | CEO directive, data governance |
-| Access URL | `http://mac-mini:3000` (mDNS) or LAN IP | IT Admin (dvhiep) provision |
+| Access URL | LAN URL provisioned by IT Admin (GPU Server S1 primary, Mac Mini optional) | IT Admin (dvhiep) provision |
 | External API calls | Zero outbound calls to any cloud AI endpoint in local mode | NFR-2; zero-cost mandate |
 | Auth | Bypassed entirely in Phase 1 (`NEXT_PUBLIC_LOCAL_MODE=true`); no token required | LAN trust boundary sufficient |
 
@@ -163,8 +189,8 @@ negotiable within Sprint 1 and must be respected by all implementation decisions
 
 ## 6. Assumptions
 
-1. The Mac mini M4 Pro 24 GB is available and accessible on the LAN before Sprint 1 ends.
-2. `local-server/server.py` (mflux wrapper) runs stably at `http://localhost:8000` on the Mac mini.
+1. GPU Server S1 is available and accessible on LAN as the primary inference node.
+2. `local-server/server.py` runs stably on the active host at `http://localhost:8000`.
 3. IT Admin (dvhiep) configures mDNS hostname `mac-mini.local` or provides the LAN IP before integration test (Task 1.6).
 4. The `src/lib/localInferenceClient.js` code path confirmed present in codebase is the correct integration point — no additional local server protocol changes are required.
 5. The three initial local models (`z-image-turbo`, `z-image-base`, `dreamshaper-8`) are accessible or downloadable on the Mac mini by integration test time.
@@ -175,3 +201,56 @@ negotiable within Sprint 1 and must be respected by all implementation decisions
 
 Sprint 1 is complete when **all** of the following are verified (see `docs/05-test/test-plans/test-plan.md`):
 
+
+---
+
+## Appendix: Sprint 12 — Audio Production (CLOSED)
+
+**Status:** COMPLETE | **Gate:** G2-audio PASSED (CTO + CPO co-signed 2026-05-10)
+
+### Deliverables
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| ADR-007 v4 — Audio Production Architecture | ✅ Accepted | `docs/02-design/01-ADRs/ADR-007-audio-production-architecture.md` |
+| Piper VAIS1000 validation | ✅ PASS | 5 samples valid, end-to-end via gateway |
+| MeloTTS Vietnamese validation | ✅ PASS | 5 samples valid, registry seeded, callable via gateway |
+| Track B consumer wrapper | ✅ Landed | `src/lib/aiPlatformVoiceClient.js` + `app/api/voice/tts/route.js` |
+| Spike E v2 (Piper vs MeloTTS) | ✅ PASS | CEO + Hùng both PASS |
+
+### Deferrals (non-blocking)
+
+| Item | Reason | Target |
+|------|--------|--------|
+| VieNeu integration | Adapter broken at v0.1.0; GPU OOM | S118 or Spike E v3 |
+| MeloTTS image persistence | Hot-patch only; needs image rebuild | AI-Platform S118 |
+| OOM stability | 2× kill in 45 min; needs auto-restart | AI-Platform S118 |
+| Brand-initials pronunciation | "NQH" weak on both engines | Sprint 13 guideline |
+
+---
+
+## Appendix: Sprint 13 — Stabilization & Governance (PLANNED)
+
+**Status:** PLANNED | **Start:** 2026-05-13 | **Duration:** 1 week
+
+### Sprint Goal
+
+Harden audio production pipeline, govern GPU resource contention, evaluate next-engine candidates.
+
+### In Scope
+
+| Task | Description | Priority | Owner |
+|------|-------------|----------|-------|
+| 13.0a | ADR-008 draft — Cross-platform GPU arbiter | P0 | @architect + @cto |
+| 13.0b | Spike E v3 — VieNeu solo eval (if GPU freed) | P0 | @coder |
+| 13.1 | Brand-text guideline — TTS script writing rules | P1 | @pm + @marketing |
+| 13.2 | Track B integration — Wire wrapper into Voice Studio UI | P1 | @coder |
+| 13.3 | OmniVoice license unblock — Await user input | P1 | @coder |
+| 13.4 | S118 tracking — Monitor AI-Platform PJM execution | P1 | @pm |
+| 13.5 | ADR-007 operational runbook — Failover & retry docs | P2 | @architect |
+
+### Out of Scope
+
+- New engine integrations until S118 closes
+- Customer-facing audio flow (ADR-091 still unsigned)
+- Fine-tuning MeloTTS on domain data (deferred to S14+)

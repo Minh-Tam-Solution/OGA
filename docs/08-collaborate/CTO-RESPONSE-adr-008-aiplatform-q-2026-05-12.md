@@ -214,7 +214,7 @@ To complete the S14-A pre-registration:
 | Q2 — Heartbeat schema | `POST /gpu/heartbeat`; schema confirmed (add lease_id); 30s; 2-miss eviction | AI-Platform: implement heartbeat emitter | 2026-05-19 |
 | Q3 — Prometheus scrape | Direct pull; host-port `127.0.0.1:8120:8120`; no extra network needed | AI-Platform: add port binding in compose | 2026-05-19 |
 | Q4 — Mac Mini access | NOT confirmed for June 14; CTO escalating to CEO; fallback July 3 | CTO: escalate to CEO today | 2026-05-12 |
-| Q5 — VieNeu MPS | No OGA tests done; AI-Platform S124 spike pre-authorized, no duplication | AI-Platform: plan S124 VieNeu MPS spike | S124 start |
+| Q5 — VieNeu MPS | **Scope redirected**: OGA accepted HO-F6; MPS spike on CEO M4 Pro 24G in 2026-05-15→22 window; see [HANDOFF-F6-ACCEPTANCE](HANDOFF-F6-ACCEPTANCE-vineu-mps-ceo-m4pro-2026-05-12.md) | AI-Platform: parallel CUDA work continues; WS-C readout 2026-05-29 | 2026-05-15→22 |
 
 ---
 

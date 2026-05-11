@@ -3,7 +3,7 @@ adr_id: ADR-005
 title: "Lip Sync Architecture — Audio-Driven Models (Revised Post-Sprint 9)"
 status: Accepted
 date: 2026-05-05
-revised: 2026-05-05
+revised: 2026-05-06
 deciders: ["@cto"]
 gate: G2
 references:
@@ -25,6 +25,7 @@ references:
 |------|----------|--------|
 | 2026-05-05 | v1.0 | Initial ADR — LivePortrait + RetinaFace |
 | 2026-05-05 | v2.0 | Revised — all audio lip-sync models failed; Lip Sync stays cloud-only |
+| 2026-05-06 | v2.1 | CogVideoX 5B spike passed; Video Studio now local-first with async queue |
 
 ## Context
 
@@ -39,7 +40,7 @@ from portrait images/videos + audio input.
 | Wav2Lip | Audio-driven | ❌ None | ❌ FAIL | All rights reserved (no LICENSE) |
 | MuseTalk | Audio-driven | MIT + Apache 2.0 | ❌ FAIL | mmpose/mmcv build failure on macOS |
 | SadTalker | Audio-driven | MIT | ⏸️ Not spiked | Similar dependency profile to MuseTalk |
-| CogVideoX-2B | Text-to-video | Apache 2.0 | 🔄 In progress | Fallback for Video Studio local |
+| CogVideoX-5B | Text-to-video | Apache 2.0 | ✅ PASS | Video Studio local (5B, float16, 16 frames, 720×480) |
 
 ### Constraints
 
@@ -81,16 +82,16 @@ The cloud-only pattern (established in Sprint 7 for Cinema Studio) is applied:
 - Local mode: shows banner + instructions to use cloud
 - Cloud mode: full functionality via API
 
-### Video Studio — CogVideoX-2B Fallback
+### Video Studio — CogVideoX 5B Local-First
 
-If CogVideoX-2B spike passes, Video Studio gets a local/cloud toggle:
+The CogVideoX 5B spike passed. Video Studio now operates with a local/cloud toggle:
 
-| Mode | Engine | Input |
-|------|--------|-------|
-| Local | CogVideoX-2B | Text prompt → Video |
-| Cloud | fal.ai / Replicate | Text/Image → Video |
+| Mode | Engine | Input | Status |
+|------|--------|-------|--------|
+| Local | CogVideoX 5B | Text prompt → Video (16 frames, 720×480 max) | ✅ Active |
+| Cloud | muapi.ai / fal.ai / Replicate | Text/Image → Video | Available when cloud mode enabled |
 
-This is **not** lip-sync but adds local video generation capability.
+This is **not** lip-sync but adds local video generation capability via async job queue to avoid 504 timeouts.
 
 ### Future Re-evaluation
 
@@ -107,7 +108,7 @@ This is **not** lip-sync but adds local video generation capability.
 - No license risk — all evaluated models properly vetted
 - No dependency hell in production venv
 - Cloud-only pattern proven stable (Cinema Studio since Sprint 7)
-- Engineering effort can pivot to CogVideoX (text-to-video) if spike passes
+- CogVideoX 5B is now integrated with async job queue (15 min max polling)
 
 ### Negative
 
@@ -121,7 +122,7 @@ This is **not** lip-sync but adds local video generation capability.
 |------|-----------|
 | No local lip-sync forever | Monitor model releases monthly; re-spike when viable |
 | Cloud API downtime | Graceful degradation with user messaging |
-| CogVideoX also fails | Video stays cloud-only; 2 local + 3 cloud studios still valid |
+| CogVideoX also fails | Video stays cloud-only; 2 local image + 1 local video + 2 cloud studios still valid |
 
 ---
 

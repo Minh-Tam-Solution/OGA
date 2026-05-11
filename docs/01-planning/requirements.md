@@ -8,7 +8,7 @@ stage: "01-planning"
 category: functional
 owner: "@pm"
 created: 2026-04-26
-last_updated: 2026-04-26
+last_updated: 2026-05-09
 ---
 
 # Requirements — NQH Creative Studio (Open-Generative-AI)
@@ -16,9 +16,9 @@ last_updated: 2026-04-26
 ## 1. Scope Statement
 
 NQH Creative Studio is a self-hosted, local-inference fork of Open-Generative-AI targeting the
-NQH/MTS internal marketing, design, and content team. Phase 1 (Sprint 1) delivers image generation
-via a local mflux/sd.cpp engine on a Mac mini M4 Pro 24 GB, eliminating per-request Muapi.ai costs
-while keeping all creative assets on-premises.
+NQH/MTS internal marketing, design, and content team. The current baseline runtime is GPU Server S1
+(CUDA) for local image workloads, with Mac Mini as fallback. Video/Cinema/LipSync remain cloud-only
+for current phase while preserving on-prem path for supported workloads.
 
 ### In Scope — Sprint 1
 
@@ -216,12 +216,12 @@ spinner), it must be added to the root global CSS, not a new `src/styles/` file.
 
 | ID | Requirement | Measurable Target | Verification Method |
 |----|-------------|-------------------|---------------------|
-| NFR-1 | Image generation latency — local engine | ≤60 s per image @ 512×512 on Mac mini M4 Pro 24 GB | Stopwatch during acceptance test; logged by `localInferenceClient` |
+| NFR-1 | Image generation latency — local engine | ≤30 s per image @ 512×512 on GPU Server S1 (CUDA), ≤60 s on Mac Mini fallback | Stopwatch during acceptance test; logged by `localInferenceClient` |
 | NFR-2 | Zero external API calls in local mode | 0 HTTP requests to `*.muapi.ai` or any cloud AI endpoint | Browser DevTools → Network tab, filter `muapi` — must be empty |
 | NFR-3 | Build success | `npm run build` exits 0; 0 TypeScript/ESLint errors blocking build | CI or manual `npm run build` log |
 | NFR-4 | Bundle size — local model list | Cloud model catalog (200+ entries) must NOT be included in local-mode JS bundle | `next build` output; chunk analysis |
 | NFR-5 | Desktop browser compatibility | UI renders correctly on Chrome ≥120 and Safari ≥17 at 1280×800 and above | Manual visual check on both browsers |
-| NFR-6 | Auth bypass in LAN mode | No login prompt when `NEXT_PUBLIC_LOCAL_MODE=true`; direct access to Image Studio | Load `http://mac-mini:3000` — no redirect to `/login` |
+| NFR-6 | Auth bypass in LAN mode | No login prompt when `NEXT_PUBLIC_LOCAL_MODE=true`; direct access to Image Studio | Load studio URL on LAN (GPU Server S1/Mac Mini) — no redirect to `/login` |
 | NFR-7 | Concurrent users — Phase 1 | UI supports 10–20 simultaneous browser sessions on LAN without server crash | Not load-tested in Sprint 1; documented as known limit |
 | NFR-8 | Uptime during business hours | Local Next.js server + mflux/sd.cpp engine available ≥99% of 09:00–18:00 weekdays | Monitored by IT Admin (dvhiep); informal SLA for Phase 1 |
 | NFR-9 | Data residency | No creative asset (image, prompt, upload) leaves the LAN perimeter in local mode | Network capture during generation run; 0 outbound image payloads |
@@ -375,3 +375,41 @@ Enables text → voice → lip-synced video in one step.
 
 **Priority:** Could Have (defer to Sprint 9 if time-constrained)
 **Owner:** @coder
+
+---
+
+## 7. Sprint 11 Functional Requirements
+
+### FR-S11-01 — OpenReel Deployment Spike
+
+Deploy OpenReel Video as standalone subdomain app on GPU Server S1. Validate
+build, systemd service, Nginx reverse proxy, SSL, smoke test (import MP4 → edit
+→ export), and security scan. Output: spike report with pass/fail per criterion.
+
+**Priority:** Must Have
+**Owner:** @architect + @coder
+**Design:** ADR-006, sprint-11-openreel-spike-plan.md
+
+### FR-S11-02 — IndexTTS Evaluation Spike
+
+Evaluate Draft to Take (IndexTTS-Workflow-Studio) on S1 via 3-day spike:
+Day 1 = legal pre-clear (BETA_TERMS.md), Day 2 = Linux smoke test (Docker
+Compose up, TTS endpoint returns WAV), Day 3 = VRAM coexistence test (with
+Wan2.1 loaded) + Vietnamese quality A/B test (≥3/5 acceptable). Output: spike
+report with precondition pass/fail.
+
+**Priority:** Must Have
+**Owner:** @coder + @cto
+**Design:** ADR-007, sprint-11-indextts-spike-plan.md
+
+### FR-S11-03 — VRAM-Arbiter Spec
+
+Design VRAM arbitration mechanism for GPU Server S1 to prevent OOM when
+IndexTTS2 (GPU mode) runs concurrently with OGA video pipeline. Spec must
+document: monitoring approach (`nvidia-smi` polling), gate thresholds,
+CPU-fallback trigger, queue semantics. Spec must be drafted BEFORE any
+IndexTTS integration code.
+
+**Priority:** Must Have
+**Owner:** @architect
+**Design:** ADR-007 §VRAM Budget & Scheduling
