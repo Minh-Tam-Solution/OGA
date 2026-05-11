@@ -42,7 +42,7 @@ trigger: "ADR-008 v1.0 CTO flag: Mac Mini cutover requires migration plan by mid
 | **CogVideoX** | Video T2V | ~14 GB | ❌ Likely CUDA-only; 5B model may not fit MPS memory | Critical | **Last** (or defer) |
 | **AnimateDiff** | Video | ~6 GB | ⚠️ Diffusers MPS partial | Medium | **3rd** |
 | **LivePortrait** | Video | ~4 GB | ⚠️ Untested on MPS | Medium | **3rd** |
-| **VieNeu** | TTS | ~2-4 GB | ❌ lmdeploy CUDA-only; no MPS path | Critical | **Defer** or replace |
+| **VieNeu** | TTS | ~2-4 GB | ❌ **F6 FAIL** — `pnnbao/vieneu-tts:serve` = linux/amd64 only; no Apple Silicon support | Critical | **Replace** (WS-C path C.3) |
 | **ComfyUI** | Image | ~8-15 GB | ⚠️ ComfyUI has MPS node but workflow compatibility unknown | High | **2nd** |
 
 **Key concerns:**
@@ -75,8 +75,8 @@ Phase 3 — Video (July Week 3-4, or defer)
 
 Phase 4 — Deferred / Blocked
 ├── CogVideoX 5B → May not fit MPS memory or lack CUDA ops
-├── VieNeu (lmdeploy) → No MPS path; keep on S1 or replace
-└── Decision: defer to S16 or run on cloud GPU
+├── VieNeu (lmdeploy) → **F6 FAIL** — no MPS path; WS-C path C.3 (replace engine)
+└── Decision: replace with Apple Silicon-native TTS engine; S1 CUDA-only fallback if needed
 ```
 
 ---
@@ -125,7 +125,7 @@ Phase 4 — Deferred / Blocked
 1. **Mac Mini delivery date:** Confirmed early July?
 2. **MPS vs CUDA performance gap:** How much slower is acceptable?
 3. **CogVideoX 5B:** 14GB VRAM model on 48GB unified — fits but bandwidth-bound. Worth migrating?
-4. **VieNeu:** No MPS path. Keep on S1, replace with MeloTTS GPU, or cloud?
+4. **VieNeu:** ❌ **F6 FAIL** — no MPS path. Decision: **replace engine** (WS-C path C.3). MeloTTS already Apple Silicon-compatible. No cloud needed.
 5. **Arbiter MPS adapter:** Build separate MPS probe or unified abstraction layer?
 
 ---

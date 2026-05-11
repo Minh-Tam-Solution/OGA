@@ -76,7 +76,7 @@ GPU Server S1 (RTX 5090 32GB ~27GB available)
 ├─ AI-Platform Voice Service (Docker, bflow-ai-voice)
 │  ├─ Piper CPU    (0 GB)    ── No GPU, no arbiter needed
 │  ├─ MeloTTS CPU  (0 GB)    ── No GPU, no arbiter needed
-│  └─ VieNeu GPU   (~2-4 GB) ── lmdeploy CUDA, NO ARBITER (deferred S118)
+│  └─ VieNeu GPU   (~2-4 GB) ── lmdeploy CUDA, NO ARBITER (deferred S118; **F6 FAIL** — no MPS path, see `docs/05-test/spike-vineu-mps-ceo-m4pro-2026-05-11.md`)
 │
 ├─ Ollama (Docker, maintained by IT/Admin)
 │  └─ LLM inference (~12 GB) ── NO ARBITER, idle-unload 300s (OLLAMA_KEEP_ALIVE=5m)
@@ -377,7 +377,7 @@ Current RULE-VRAM-001 (OGA-internal, SPEC-VRAM-001) will be **superseded** by AD
 2. **Sprint 14:** ADR-009 (implementation) — build arbiter service + real-time dashboard
 3. **Sprint 14:** MPS decision — re-enable MPS (complements arbiter) or stay disabled (arbiter enforces strict serial)
 4. **Sprint 14:** OGA refactors `src/lib/localModels.js` to call unified arbiter `POST /gpu/admission-request` before `model.to('cuda')`
-5. **Sprint 15:** AI-Platform voice registers as consumer (VieNeu GPU mode)
+5. **Sprint 15:** AI-Platform voice registers as consumer (VieNeu GPU mode on S1 CUDA only; Mac Mini path requires replacement engine per F6 FAIL)
 6. **Sprint 15+:** Ollama registers as consumer; ComfyUI + SD host register
 7. **End of June / Early July:** Mac Mini M4 Pro 48G cutover for production audio/image/video workloads; S1 remains dev/test only
 8. **Post-cutover:** S1 continues as integration/test host with Ollama-first priority for AI-Platform, Bflow, NQH-Bot, NQH-POS
@@ -444,7 +444,7 @@ Current RULE-VRAM-001 (OGA-internal, SPEC-VRAM-001) will be **superseded** by AD
 10. **Heartbeat spec:** ✅ `POST /gpu/heartbeat` with lease_id, 30s interval, 2-miss eviction
 11. **Prometheus scrape:** ✅ Direct pull; host-port `127.0.0.1:8120:8120`
 12. **Mac Mini access:** ⏳ CTO escalating to CEO; fallback 2026-07-03
-13. **VieNeu MPS:** ✅ AI-Platform S124 spike pre-authorized; no OGA duplication
+13. **VieNeu MPS:** ❌ **F6 FAIL** — `pnnbao/vieneu-tts:serve` = linux/amd64 only; no Apple Silicon support. See `docs/05-test/spike-vineu-mps-ceo-m4pro-2026-05-11.md`. WS-C path C.3 (replace engine) triggered.
 
 ---
 
