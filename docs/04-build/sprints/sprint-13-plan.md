@@ -27,10 +27,10 @@ rollback: "git checkout main"
 
 1. **Harden** the audio production pipeline (Track B consumer wrapper integration, brand-text guidelines)
 2. **Govern** cross-platform GPU resource contention (ADR-008 proposal)
-3. **Evaluate** next-engine candidates (VieNeu solo eval, OmniVoice license unblock)
+3. **Evaluate** next-engine candidates — **VieNeu CANCELLED post-F6 spike 2026-05-11** (upstream amd64-only, no Apple Silicon path); OmniVoice still license-blocked
 4. **Track** AI-Platform S118 deliverables (MeloTTS image persistence, OOM stability)
 
-**CPO Guardrail:** If VieNeu GPU is not freed by Sprint 13 start (2026-05-13), scope locks to **2-engine MVP** (Piper + MeloTTS). No sprint delay for external blockers.
+**CPO Guardrail:** Scope is **locked to 2-engine MVP** (Piper + MeloTTS) per F6 spike outcome 2026-05-11. VieNeu cannot reach Mac Mini production target (upstream amd64-only). 2-engine stack ratified as production by Hùng sign-off Spike C + Spike E v2.
 
 No new engine integrations until S118 closes and ADR-008 is accepted.
 
@@ -47,7 +47,7 @@ Audio production architecture validated at G2:
 - **Track B consumer wrapper** → Landed (`src/lib/aiPlatformVoiceClient.js` + `app/api/voice/tts/route.js`)
 
 Remaining gaps:
-- VieNeu deferred (GPU OOM + adapter broken at v0.1.0)
+- VieNeu **CANCELLED** post-F6 spike 2026-05-11 — upstream `pnnbao/vieneu-tts:serve` is amd64-only, no Apple Silicon path. Mac Mini production cutover incompatible with VieNeu.
 - MeloTTS container changes non-persistent (image rebuild required)
 - OOM kill recurrence (2× in 45 min)
 - Brand initials ("NQH") pronunciation weak on both engines
@@ -61,7 +61,7 @@ Remaining gaps:
 |------|-------------|----------|--------|-------|-----------|
 | 13.0a | **ADR-008 draft** — Cross-platform GPU resource arbiter policy + interface contract (extends RULE-VRAM-001 to all NQH GPU consumers: OGA video, AI-Platform voice, ollama, future training) | P0 | 3 | @architect + @cto | Must complete before any new GPU-heavy engine integration |
 | | **Scope boundary (CTO-locked):** IN = policy + interface contract + consumer registry + escalation path + RULE-VRAM-001 deprecation. OUT = implementation, deployment, monitoring, retry strategies → ADR-009 in S14. | | | | |
-| 13.0b | **Spike E v3 — VieNeu solo eval** — Run upstream `pnnbao/vieneu-tts:serve` Docker on freed GPU; 5-sample smoke + pronunciation check | P0 | 5 | @coder | Blocked until ollama owner coordinates unload window OR S118 adapter fix lands |
+| 13.0b | ~~Spike E v3 — VieNeu solo eval~~ — **CANCELLED 2026-05-11** per F6 spike result (upstream amd64-only). 5h reclaimed → reassigned to S118 cleanup if needed, otherwise sprint slack. | ~~P0~~ | 0 | — | CANCELLED — see `docs/05-test/spike-vineu-mps-ceo-m4pro-2026-05-11.md` + `docs/08-collaborate/CTO-DISPOSITION-F6-vineu-mps-2026-05-11.md` |
 | | **Drop-day (CTO-locked):** If still blocked at S13 Day 3 (Wed 2026-05-15) → drop from S13, re-plan in S14. Do not burn bandwidth on indefinite wait. | | | | |
 | 13.1 | **Brand-text guideline** — Document script-writing rules for TTS input (initials → spelled out, domain terms → verified phoneme) | P1 | 2 | @pm + @marketing | Parallel; feeds production content workflow |
 | 13.2 | **Track B integration** — Wire `aiPlatformVoiceClient` into Voice Studio UI; env var setup; error handling for 503/404 | P1 | 3 | @coder | **✅ COMPLETE — live smoke PASSED 2026-05-10** |
@@ -87,7 +87,7 @@ Remaining gaps:
    ├── needs: S118 image rebuild (external)
    └── needs: brand-text guideline (13.1)
 
-13.0b (VieNeu solo eval)
+~~13.0b (VieNeu solo eval — CANCELLED)~~
    │
    ├── blocked: ollama GPU unload window
    └── blocked: AI-Platform S118 adapter fix
@@ -106,7 +106,7 @@ Remaining gaps:
 | ADR-007 v4 Accepted | ✅ | `docs/02-design/01-ADRs/ADR-007-audio-production-architecture.md` |
 | AI-Platform S118/S123 closed | ✅ | All 4 criteria PASS; origin/main @ `18f43ea84` |
 | Track B wrapper landed | ✅ | `src/lib/aiPlatformVoiceClient.js` + `app/api/voice/tts/route.js` |
-| VieNeu GPU availability | ⏳ | S1 GPU still blocked; F6 MPS spike on CEO M4 Pro accepted as parallel path |
+| VieNeu GPU availability | ✅ RESOLVED (cancelled) | F6 MPS spike CLOSED 2026-05-11 verdict FAIL — upstream amd64-only. VieNeu no longer in Mac Mini path. Risk closed; 2-engine production stack ratified. |
 | OmniVoice repo URL | ⏳ | User input pending |
 
 ---
@@ -116,7 +116,7 @@ Remaining gaps:
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | ~~S118 slips past Sprint 13~~ | ~~Track B integration delayed~~ | ✅ **RESOLVED** — S118 closed early 2026-05-10; Track B unblocked |
-| ollama owner unresponsive | VieNeu S1 eval blocked indefinitely | F6 MPS spike on CEO M4 Pro provides parallel path; accept 2-engine config if both blocked |
+| ollama owner unresponsive | ~~VieNeu S1 eval blocked~~ (moot — VieNeu cancelled) | N/A — 2-engine config (Piper + MeloTTS) is the production stack |
 | OmniVoice license unresolved | Spike F blocked | Accept Piper+MeloTTS as production pair; OmniVoice = future |
 | ADR-008 scope creep | Governance doc becomes architecture rewrite | Time-box 3 points; defer deep arbiter implementation to S14 |
 
@@ -125,7 +125,7 @@ Remaining gaps:
 ## Definition of Done
 
 - [x] ADR-008 v1.1 APPROVED — CTO+CPO countersigned 2026-05-11; D1-D6 + Q1-Q5 locked
-- [ ] VieNeu eval: S1 GPU still blocked (deferral trail) OR F6 MPS spike report committed
+- [x] VieNeu eval: F6 MPS spike report committed — **FAIL**; upstream `pnnbao/vieneu-tts:serve` = linux/amd64 only; no Apple Silicon support
 - [ ] Brand-text guideline published in `docs/08-collaborate/content-guidelines/`
 - [ ] Track B integration merged to `main` (or branch-ready for S14)
 - [x] S118 weekly check-in logged with AI-Platform PJM — **CLOSED early 2026-05-10**
@@ -150,8 +150,9 @@ Remaining gaps:
 | Task | Status | Note |
 |------|--------|------|
 | 13.0a ADR-008 | ✅ **APPROVED — CTO+CPO countersigned 2026-05-11** | v1.1 D1-D6 + Q1-Q5 locked; S1=dev/test Ollama-first, Mac Mini production July |
-| 13.0b VieNeu eval | ⏳ Redirected to F6 | S1 GPU still blocked; F6 MPS spike on CEO M4 Pro 2026-05-15→22 accepted |
-| F6 VieNeu MPS spike | ✅ **ACCEPTED** | HO-F6 handoff; CEO session window 2026-05-15→22; report +48h |
+| 13.0b VieNeu eval | ❌ CANCELLED 2026-05-11 | F6 spike closed at upstream gate; task removed from sprint scope |
+| F6 VieNeu MPS spike | ✅ COMPLETE — FAIL (≡ CUDA-ONLY) | Report: `docs/05-test/spike-vineu-mps-ceo-m4pro-2026-05-11.md`; disposition: `docs/08-collaborate/CTO-DISPOSITION-F6-vineu-mps-2026-05-11.md` |
+| WS-C decision gate | 🚀 Accelerated 06-15 → 05-20 (recommended) | Evidence-ready; AI-Platform CTO response pending 2026-05-15 EOD |
 | 13.1 Brand-text guideline | 📋 Sprint 13 work | CPO+marketing |
 | 13.2 Track B UI wire | ✅ **COMPLETE — CPO FINAL COUNTERSIGN** | Live smoke + 14/14 tests + 3 CPO fixes |
 | 13.3 OmniVoice license | ❌ Removed | Hard expiry at S13 kickoff |
@@ -163,7 +164,7 @@ Remaining gaps:
 | Item | Owner | Urgency |
 |------|-------|---------|
 | ~~CPO countersign Sprint 13 plan~~ | ~~@cpo~~ | **✅ DONE 2026-05-11** |
-| F6 spike session scheduling | @cto-OGA | **P0** — CEO calendar request fires 2026-05-13 |
+| ~~F6 spike session scheduling~~ | ~~@cto-OGA~~ | **✅ COMPLETE 2026-05-11** — Verdict FAIL; upstream linux/amd64 only |
 | ~~ADR-007 runbook~~ | ~~@architect~~ | **✅ COMPLETE** — `docs/04-build/sprints/sprint-13/ADR-007-runbook.md` |
 | Update `.sdlc-config.json` (G2-audio passed, sprint_12.audio = closed) | @oga-pjm | Hours |
 | API key management (security-sensitive) | @oga-devops | **DEFERRED** — No 1Password vault yet; API key stays in `.env.local` (git-ignored). Revisit when vault provisioned. |
