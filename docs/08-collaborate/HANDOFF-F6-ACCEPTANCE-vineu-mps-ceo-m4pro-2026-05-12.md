@@ -9,8 +9,11 @@ related:
   - "docs/08-collaborate/CTO-RESPONSE-adr-008-aiplatform-q-2026-05-12.md (Q4+Q5 — supersedes Q5 plan)"
   - "docs/02-design/01-ADRs/ADR-008-cto-cpo-decision-log.md (D2 VieNeu GPU-only)"
   - "AI-Platform docs/02-design/12-architecture-decisions/adr-090-ws-c-vineu-path-decision-template-2026-05-11.md"
-status_response: "ACCEPTED with conditions — see §3"
+status_response: "CLOSED — spike executed 2026-05-11, verdict FAIL (≡ CUDA-ONLY arch-mismatch upstream)"
 deadline_met: "Yes (2026-05-12, before 2026-05-14 EOD target)"
+spike_result: "docs/05-test/spike-vineu-mps-ceo-m4pro-2026-05-11.md"
+disposition: "docs/08-collaborate/CTO-DISPOSITION-F6-vineu-mps-2026-05-11.md"
+closed_date: "2026-05-11"
 ---
 
 # OGA → AI-Platform: F6 Handoff ACCEPTED
@@ -101,17 +104,19 @@ OGA will not attempt CPU-fallback adapter work in this session — that's a sepa
 
 ---
 
-## 4. Schedule commitment
+## 4. Schedule commitment — CLOSED 2026-05-11
 
-| Milestone | OGA-committed date | Owner |
-|---|---|---|
-| F6 acceptance filed (this doc) | 2026-05-12 | @cto-OGA ✅ done |
-| CEO calendar request sent | 2026-05-13 (Mon next biz day) | @cto-OGA |
-| Session scheduled with CEO | by 2026-05-22 | @cto-OGA |
-| Spike session executed | 2026-05-15 → 2026-05-22 (CEO-driven) | @oga-devops + @cto-OGA |
-| Spike report committed to `OGA/docs/05-test/spike-vineu-mps-ceo-m4pro-2026-MM-DD.md` | within 48h of session | @oga-devops |
-| Notification to AI-Platform @cto | same day as report commit | @cto-OGA |
-| Combined readout (AI-Platform CUDA + OGA MPS) | 2026-05-29 | AI-Platform PJM (R), @cto-OGA contributes |
+| Milestone | Planned | Actual | Owner |
+|---|---|---|---|
+| F6 acceptance filed (this doc) | 2026-05-12 | ✅ 2026-05-12 | @cto-OGA |
+| CEO calendar request sent | 2026-05-13 | 🔄 superseded — CEO ran spike same day handoff filed | @cto-OGA |
+| Session scheduled with CEO | by 2026-05-22 | ✅ executed 2026-05-11T23:08+0700 | CEO direct |
+| Spike session executed | 2026-05-15 → 2026-05-22 | ✅ 2026-05-11 (~10 min, halted STEP 3 upstream gate) | Kimi CLI on CEO M4 Pro 24G |
+| Spike report committed | within 48h of session | ✅ same day at `docs/05-test/spike-vineu-mps-ceo-m4pro-2026-05-11.md` | CEO → @cto-OGA |
+| Notification to AI-Platform @cto | same day as report commit | ⏳ pending (this commit) | @cto-OGA |
+| Combined readout (AI-Platform CUDA + OGA MPS) | 2026-05-29 | 🚀 accelerated — recommend 2026-05-20 next CTO sync per disposition | AI-Platform PJM (R), @cto-OGA contributes |
+
+**Result**: FAIL (Kimi literal verdict) ≡ CUDA-ONLY (CTO semantic reclassification) — upstream image is `linux/amd64` only, no arm64 manifest. WS-C path **C.3 (replace engine)** is now required for Mac Mini production. Full triage in [CTO-DISPOSITION-F6-vineu-mps-2026-05-11.md](CTO-DISPOSITION-F6-vineu-mps-2026-05-11.md).
 
 If session slips past 2026-05-22 due to CEO calendar, OGA notifies same day with revised date.
 

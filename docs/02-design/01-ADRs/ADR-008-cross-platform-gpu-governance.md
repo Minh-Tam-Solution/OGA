@@ -300,7 +300,7 @@ After July cutover, production content traffic is expected on Mac Mini and S1 re
 | `aiplatform-voice-piper` | AI-Platform | production | 0 | N/A | N/A | CPU-only, no registry |
 | `aiplatform-voice-melotts` | AI-Platform | production | 0 | N/A | N/A | CPU-only, no registry |
 | `ai-platform-gateway` | AI-Platform | **priority-llm** | 14336 | 600s | No | Pre-S14-A scaffold |
-| `aiplatform-voice-vieneu` | AI-Platform | production | 4096 | **60s** | No (CPU unsupported) | Deferred S118 |
+| `aiplatform-voice-vieneu` | AI-Platform | production | 4096 | **60s** | No (CPU unsupported) | **F6 spike 2026-05-11: upstream image is amd64-only, no arm64 build → NOT viable on Mac Mini. WS-C path C.3 (replace engine) required. See docs/08-collaborate/CTO-DISPOSITION-F6-vineu-mps-2026-05-11.md** |
 | `ai-platform-gateway` | AI-Platform | **priority-llm** | 14336 | 600s | No | Pre-S14-A scaffold — proxies LLM traffic to ollama for AI-Platform/Bflow/NQH-Bot/NQH-POS |
 | `ollama-inference` | IT/Admin | **priority-llm** | 14336 | **600s** | No | Active, Docker, multi-model |
 | `comfyui-image` | IT/Admin | production | 15360 | 300s | No | Active (sd.nhatquangholding.com) |
