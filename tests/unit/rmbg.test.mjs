@@ -6,13 +6,14 @@ import { resolve } from 'path';
 const PROJECT_ROOT = resolve(import.meta.dirname, '../..');
 
 let serverProc = null;
-let serverUrl = 'http://localhost:8002';
+let serverUrl = 'http://localhost:8003';
 
 function startServer() {
     return new Promise((resolve, reject) => {
-        const proc = spawn('python3', ['local-server/server.py'], {
+        const pythonPath = resolve(PROJECT_ROOT, '.venv/bin/python3');
+        const proc = spawn(pythonPath, ['local-server/server.py'], {
             cwd: PROJECT_ROOT,
-            env: { ...process.env, INFERENCE_ENGINE: 'mflux', PORT: '8002' },
+            env: { ...process.env, INFERENCE_ENGINE: 'diffusers', PORT: '8003', OGA_FORCE_CPU: 'true' },
         });
         let stderr = '';
         let stdout = '';
@@ -25,7 +26,7 @@ function startServer() {
         }, 30000);
 
         const checkReady = setInterval(() => {
-            if (stderr.includes('RMBG ready') || stdout.includes('Application startup complete') || stderr.includes('Application startup complete')) {
+            if (stderr.includes('RMBG ready') || stdout.includes('RMBG ready') || stdout.includes('Application startup complete') || stderr.includes('Application startup complete')) {
                 clearTimeout(timeout);
                 clearInterval(checkReady);
                 serverProc = proc;
@@ -60,6 +61,14 @@ async function fetchJson(path, opts = {}) {
 
 describe('RMBG — endpoint contract', () => {
     beforeAll(async () => {
+        // If external server is already running, skip spawning our own
+        try {
+            const res = await fetch(serverUrl + '/health');
+            if (res.ok) {
+                console.log('Using external server on', serverUrl);
+                return;
+            }
+        } catch {}
         await startServer();
     }, 35000);
 

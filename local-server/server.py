@@ -25,9 +25,19 @@ import uuid
 from enum import Enum
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+# Suppress torch.compile/dynamo hard failures with SDNQ-quantized models
+# on torch nightly. See https://pytorch.org/docs/stable/torch.compiler_faq.html
+try:
+    import torch._dynamo
+    torch._dynamo.config.suppress_errors = True
+    log = logging.getLogger("nqh-server")
+    log.info("torch._dynamo suppress_errors enabled")
+except Exception:
+    pass
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("nqh-server")
@@ -41,6 +51,9 @@ INFERENCE_ENGINE = os.environ.get("INFERENCE_ENGINE", "diffusers")
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "/tmp/nqh-output"))
 OUTPUT_DIR.mkdir(exist_ok=True)
 MEMORY_BASELINE_TOLERANCE_MB = 300  # CPO gate: peak_ram <= baseline + 300MB
+
+# CPU fallback flag (Luồng A — unblock CI/Gate on RTX 5090 Blackwell)
+FORCE_CPU = os.environ.get("OGA_FORCE_CPU", "").lower() in ("1", "true", "yes")
 
 _models_path = Path(__file__).parent / "models.json"
 MODEL_REGISTRY = json.loads(_models_path.read_text()) if _models_path.exists() else []
@@ -73,6 +86,11 @@ _rembg_session = None
 last_peak_ram = 0
 last_gen_latency = 0.0
 
+# ─── Async Job State ──────────────────────────────────────────────────────────
+async_jobs: dict[str, dict] = {}
+# Locks for job dict to prevent race on concurrent updates
+_jobs_lock = asyncio.Lock()
+
 
 # ─── Request/Response Models ─────────────────────────────────────────────────
 
@@ -80,6 +98,15 @@ class MuapiRequest(BaseModel):
     prompt: str
     aspect_ratio: str | None = None
     resolution: str | None = None
+    image_url: str | None = None
+    seed: int | None = None
+    steps: int | None = None
+    guidance_scale: float | None = None
+
+class AsyncGenerateRequest(BaseModel):
+    model: str
+    prompt: str
+    aspect_ratio: str | None = None
     image_url: str | None = None
     seed: int | None = None
     steps: int | None = None
@@ -135,10 +162,28 @@ def resolve_model_config_strict(frontend_id: str) -> dict | None:
             return m
     return None
 
-def get_mps_memory() -> int:
-    """Return MPS allocated memory in MB."""
+def get_runtime_device() -> str:
+    """Resolve preferred runtime device for inference."""
+    if FORCE_CPU:
+        return "cpu"
     try:
         import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        if torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        pass
+    return "cpu"
+
+def get_mps_memory() -> int:
+    """Return active accelerator memory in MB (CUDA/MPS)."""
+    if FORCE_CPU:
+        return 0
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return round(torch.cuda.memory_allocated() / 1024 / 1024)
         if torch.backends.mps.is_available():
             return round(torch.mps.current_allocated_memory() / 1024 / 1024)
     except Exception:
@@ -185,9 +230,7 @@ def init_rembg():
 # ─── Pipeline Lifecycle (ADR-003 + TS-003) ────────────────────────────────────
 
 def unload_pipeline():
-    """Unload current Diffusers pipeline, release MPS memory.
-    Gate: peak_ram_mb <= baseline_mb + MEMORY_BASELINE_TOLERANCE_MB within 5s.
-    """
+    """Unload current Diffusers pipeline, release GPU/MPS memory synchronously."""
     global pipe, current_model, pipeline_state
     import torch
 
@@ -204,13 +247,15 @@ def unload_pipeline():
     current_model = None
     gc.collect()
 
-    if torch.backends.mps.is_available():
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+    elif torch.backends.mps.is_available():
         torch.mps.empty_cache()
 
     mem_after = get_mps_memory()
     pipeline_state = PipelineState.IDLE
-    log.info(f"Pipeline unloaded: {model_name} (RAM: {mem_before}→{mem_after}MB, "
-             f"baseline={memory_baseline_mb}MB, tolerance={MEMORY_BASELINE_TOLERANCE_MB}MB)")
+    log.info(f"Pipeline unloaded: {model_name} (RAM: {mem_before}→{mem_after}MB)")
 
     if mem_after > memory_baseline_mb + MEMORY_BASELINE_TOLERANCE_MB:
         log.warning(f"Memory not fully released: {mem_after}MB > baseline+tolerance "
@@ -223,6 +268,7 @@ def load_pipeline(model_config: dict):
     import torch
 
     pipeline_state = PipelineState.LOADING
+    runtime_device = get_runtime_device()
 
     # Register SDNQ quantizer
     try:
@@ -241,20 +287,99 @@ def load_pipeline(model_config: dict):
         from diffusers import ZImagePipeline as PipeClass
     elif pipeline_name == "Flux2KleinPipeline":
         from diffusers import Flux2KleinPipeline as PipeClass
+    elif pipeline_name == "StableDiffusionPipeline":
+        from diffusers import StableDiffusionPipeline as PipeClass
+    elif pipeline_name == "StableDiffusionXLPipeline":
+        from diffusers import StableDiffusionXLPipeline as PipeClass
     elif pipeline_name == "AnimateDiffPipeline":
         from diffusers import AnimateDiffPipeline, MotionAdapter, DDIMScheduler
         adapter_id = model_config.get("motion_adapter", model_id)
         base_id = model_config.get("base_model", "runwayml/stable-diffusion-v1-5")
         log.info(f"Loading MotionAdapter: {adapter_id} ...")
-        adapter = MotionAdapter.from_pretrained(adapter_id, torch_dtype=torch.float16)
+        adapter = MotionAdapter.from_pretrained(adapter_id, torch_dtype=torch.bfloat16)
         log.info(f"Loading AnimateDiff base: {base_id} ...")
         pipe = AnimateDiffPipeline.from_pretrained(
-            base_id, motion_adapter=adapter, torch_dtype=torch.float16
+            base_id, motion_adapter=adapter, torch_dtype=torch.bfloat16
         )
-        pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
-        if torch.backends.mps.is_available():
+        # AnimateDiff requires beta_schedule="linear" for proper motion generation
+        pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config, beta_schedule="linear")
+        # VAE slicing keeps decode memory bounded for multi-frame video
+        pipe.vae.enable_slicing()
+        if runtime_device == "mps":
             pipe.enable_model_cpu_offload(device="mps")
             log.info("MPS CPU offload enabled for AnimateDiff")
+        elif runtime_device == "cuda":
+            pipe.enable_model_cpu_offload()
+            log.info("CUDA model CPU offload enabled for AnimateDiff")
+        else:
+            pipe.enable_model_cpu_offload()
+        current_model = model_config
+        pipeline_state = PipelineState.READY
+        log.info(f"Pipeline ready: {model_config['name']} (RAM: {get_mps_memory()}MB)")
+        return
+    elif pipeline_name == "CogVideoXPipeline":
+        from diffusers import CogVideoXPipeline
+        log.info(f"Loading CogVideoX from {model_id} ...")
+        pipe = CogVideoXPipeline.from_pretrained(
+            model_id, torch_dtype=torch.float16
+        )
+        # NOTE: enable_tiling() with bfloat16 caused monochrome output on RTX 5090.
+        # float16 + cpu_offload works correctly. Do NOT re-enable tiling without testing.
+        # pipe.vae.enable_tiling()
+        if runtime_device == "mps":
+            pipe.enable_model_cpu_offload(device="mps")
+            log.info("MPS CPU offload enabled for CogVideoX")
+        elif runtime_device == "cuda":
+            pipe.enable_model_cpu_offload()
+            log.info("CUDA model CPU offload enabled for CogVideoX")
+        else:
+            pipe.enable_model_cpu_offload()
+        current_model = model_config
+        pipeline_state = PipelineState.READY
+        log.info(f"Pipeline ready: {model_config['name']} (RAM: {get_mps_memory()}MB)")
+        return
+    elif pipeline_name == "WanPipeline":
+        from diffusers import AutoencoderKLWan, WanPipeline
+        from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
+        log.info(f"Loading Wan2.1 from {model_id} ...")
+        vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32)
+        # flow_shift=3.0 for 480P, 5.0 for 720P — read from model defaults for future 14B/720P support
+        flow_shift = model_config.get("default", {}).get("flow_shift", 3.0)
+        scheduler = UniPCMultistepScheduler(
+            prediction_type="flow_prediction",
+            use_flow_sigmas=True,
+            num_train_timesteps=1000,
+            flow_shift=flow_shift,
+        )
+        pipe = WanPipeline.from_pretrained(
+            model_id, vae=vae, torch_dtype=torch.bfloat16
+        )
+        pipe.scheduler = scheduler
+        if runtime_device == "mps":
+            pipe.enable_model_cpu_offload(device="mps")
+            log.info("MPS CPU offload enabled for Wan2.1")
+        elif runtime_device == "cuda":
+            pipe.enable_model_cpu_offload()
+            log.info("CUDA model CPU offload enabled for Wan2.1")
+        else:
+            pipe.enable_model_cpu_offload()
+        current_model = model_config
+        pipeline_state = PipelineState.READY
+        log.info(f"Pipeline ready: {model_config['name']} (RAM: {get_mps_memory()}MB)")
+        return
+    elif pipeline_name == "LTXPipeline":
+        from diffusers import LTXPipeline
+        log.info(f"Loading LTX-Video from {model_id} ...")
+        pipe = LTXPipeline.from_pretrained(
+            model_id, torch_dtype=torch.bfloat16
+        )
+        pipe.vae.enable_tiling()
+        if runtime_device == "mps":
+            pipe.enable_model_cpu_offload(device="mps")
+            log.info("MPS CPU offload enabled for LTX")
+        elif runtime_device == "cuda":
+            pipe.enable_model_cpu_offload()
+            log.info("CUDA model CPU offload enabled for LTX")
         else:
             pipe.enable_model_cpu_offload()
         current_model = model_config
@@ -276,9 +401,12 @@ def load_pipeline(model_config: dict):
             raise
 
     pipe.vae.to(memory_format=torch.channels_last)
-    if torch.backends.mps.is_available():
+    if runtime_device == "mps":
         pipe.enable_model_cpu_offload(device="mps")
         log.info("MPS CPU offload enabled")
+    elif runtime_device == "cuda":
+        pipe = pipe.to("cuda")
+        log.info("CUDA execution enabled")
     else:
         pipe.enable_model_cpu_offload()
 
@@ -298,7 +426,8 @@ def swap_pipeline(model_config: dict):
 async def diffusers_generate(prompt: str, width: int, height: int,
                              steps: int | None = None, seed: int | None = None,
                              cfg: float | None = None, image=None,
-                             num_frames: int | None = None) -> dict:
+                             num_frames: int | None = None,
+                             request_id: str | None = None) -> dict:
     global last_peak_ram, last_gen_latency, pipeline_state
     import torch
 
@@ -311,6 +440,47 @@ async def diffusers_generate(prompt: str, width: int, height: int,
     # Detect video model
     is_video = "text-to-video" in model_cfg.get("features", [])
 
+    # Video model resolution clamps
+    model_name = model_cfg.get("name", "")
+    if "CogVideoX" in model_name:
+        cog_map = {
+            (1280, 720): (720, 480),
+            (720, 1280): (480, 720),
+            (512, 512): (480, 480),
+            (1024, 768): (640, 480),
+            (768, 1024): (480, 640),
+        }
+        new_wh = cog_map.get((width, height))
+        if new_wh:
+            width, height = new_wh
+            log.info(f"CogVideoX resolution clamped to {width}x{height}")
+    elif "Wan2.1" in model_name:
+        # Wan2.1 1.3B: 480P sweet spot, divisible by 16
+        wan_map = {
+            (1280, 720): (832, 480),
+            (720, 1280): (480, 832),
+            (512, 512): (480, 480),
+            (1024, 768): (640, 480),
+            (768, 1024): (480, 640),
+        }
+        new_wh = wan_map.get((width, height))
+        if new_wh:
+            width, height = new_wh
+            log.info(f"Wan2.1 resolution mapped to {width}x{height}")
+    elif "LTX" in model_name:
+        # LTX: divisible by 32, frames divisible by 8+1
+        ltx_map = {
+            (1280, 720): (768, 512),
+            (720, 1280): (512, 768),
+            (512, 512): (512, 512),
+            (1024, 768): (640, 480),
+            (768, 1024): (480, 640),
+        }
+        new_wh = ltx_map.get((width, height))
+        if new_wh:
+            width, height = new_wh
+            log.info(f"LTX resolution mapped to {width}x{height}")
+
     pipe_kwargs = {
         "prompt": prompt, "height": height, "width": width,
         "num_inference_steps": gen_steps, "guidance_scale": float(gen_cfg),
@@ -319,6 +489,10 @@ async def diffusers_generate(prompt: str, width: int, height: int,
 
     if is_video:
         pipe_kwargs["num_frames"] = num_frames or defaults.get("num_frames", 16)
+        # AnimateDiff VAE decode of 16 frames at once can OOM on 32GB VRAM.
+        # Chunk decode to 2 frames at a time to keep memory bounded.
+        if "AnimateDiff" in model_cfg.get("pipeline", ""):
+            pipe_kwargs["decode_chunk_size"] = 2
 
     if image is not None and "image-to-image" in model_cfg.get("features", []):
         from PIL import Image as PILImage
@@ -355,30 +529,38 @@ async def diffusers_generate(prompt: str, width: int, height: int,
         last_gen_latency = elapsed
         log.info(f"Done in {elapsed:.1f}s — RAM: {mem_before}→{mem_after}MB")
 
+    _schedule_idle_unload()
+
     if is_video:
         from diffusers.utils import export_to_video
         frames = result.frames[0]
         import tempfile
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
             mp4_path = f.name
-        export_to_video(frames, mp4_path, fps=8)
+        fps = defaults.get("fps", 8)
+        export_to_video(frames, mp4_path, fps=fps)
         mp4_bytes = Path(mp4_path).read_bytes()
         Path(mp4_path).unlink(missing_ok=True)
         b64 = base64.b64encode(mp4_bytes).decode()
-        return {
+        result_dict = {
             "status": "completed",
             "outputs": [f"data:video/mp4;base64,{b64}"],
             "_meta": {
                 "model": model_cfg.get("name", "unknown"),
                 "size": f"{width}x{height}", "steps": gen_steps, "seed": gen_seed,
                 "elapsed_seconds": round(elapsed, 1), "peak_ram_mb": last_peak_ram,
-                "engine": "diffusers", "format": "mp4", "frames": len(frames),
+                "engine": "diffusers", "format": "mp4", "frames": len(frames), "fps": fps,
             },
         }
+        if request_id:
+            out_path = OUTPUT_DIR / f"{request_id}.mp4"
+            out_path.write_bytes(mp4_bytes)
+            result_dict["_meta"]["file_path"] = str(out_path)
+        return result_dict
 
     result_image = result.images[0]
     b64 = image_to_base64(result_image)
-    return {
+    result_dict = {
         "status": "completed",
         "outputs": [f"data:image/png;base64,{b64}"],
         "_meta": {
@@ -388,6 +570,11 @@ async def diffusers_generate(prompt: str, width: int, height: int,
             "engine": "diffusers",
         },
     }
+    if request_id:
+        out_path = OUTPUT_DIR / f"{request_id}.png"
+        result_image.save(out_path, format="PNG")
+        result_dict["_meta"]["file_path"] = str(out_path)
+    return result_dict
 
 
 # ─── mflux Fallback (kill switch) ────────────────────────────────────────────
@@ -427,10 +614,10 @@ async def mflux_generate(prompt, width, height, steps=None, seed=None, **kw) -> 
     }
 
 
-async def generate(prompt, width, height, steps=None, seed=None, cfg=None, image=None):
+async def generate(prompt, width, height, steps=None, seed=None, cfg=None, image=None, request_id=None):
     if INFERENCE_ENGINE == "mflux":
         return await mflux_generate(prompt, width, height, steps, seed)
-    return await diffusers_generate(prompt, width, height, steps, seed, cfg, image)
+    return await diffusers_generate(prompt, width, height, steps, seed, cfg, image, request_id=request_id)
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -439,6 +626,7 @@ async def generate(prompt, width, height, steps=None, seed=None, cfg=None, image
 async def health():
     return {
         "status": "ok", "engine": INFERENCE_ENGINE,
+        "runtime_device": get_runtime_device(),
         "pipeline_state": pipeline_state.value,
         "model": current_model["name"] if current_model else "none",
         "peak_ram_mb": last_peak_ram,
@@ -606,9 +794,13 @@ async def _load_ip_adapter():
     _ip_adapter_pipe.load_ip_adapter(
         "h94/IP-Adapter", subfolder="models", weight_name="ip-adapter_sd15.bin"
     )
-    if torch.backends.mps.is_available():
+    runtime_device = get_runtime_device()
+    if runtime_device == "mps":
         _ip_adapter_pipe = _ip_adapter_pipe.to("mps")
         log.info("IP-Adapter pipeline on MPS")
+    elif runtime_device == "cuda":
+        _ip_adapter_pipe = _ip_adapter_pipe.to("cuda")
+        log.info("IP-Adapter pipeline on CUDA")
     else:
         _ip_adapter_pipe = _ip_adapter_pipe.to("cpu")
         log.info("IP-Adapter pipeline on CPU")
@@ -622,7 +814,9 @@ def _unload_ip_adapter():
         del _ip_adapter_pipe
         _ip_adapter_pipe = None
         gc.collect()
-        if torch.backends.mps.is_available():
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif torch.backends.mps.is_available():
             torch.mps.empty_cache()
         log.info("IP-Adapter pipeline unloaded")
 
@@ -694,11 +888,140 @@ async def product_placement(req: ProductPlacementRequest):
         },
     }
 
+# ─── File Upload (local mode) ─────────────────────────────────────────────────
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/tmp/nqh-uploads"))
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+@app.post("/api/v1/upload_file")
+async def upload_file(request: Request):
+    """Store an uploaded file and return a local file:// URL for downstream use."""
+    form = await request.form()
+    file_obj = form.get("file")
+    if not file_obj:
+        raise HTTPException(400, "No file field found")
+    
+    ext = Path(file_obj.filename or "upload").suffix or ".bin"
+    dest = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
+    content = await file_obj.read()
+    dest.write_bytes(content)
+    log.info(f"Uploaded {file_obj.filename} → {dest} ({len(content)} bytes)")
+    # Return file:// URL so the frontend can pass it to image-to-image / image-to-video
+    return {"url": f"file://{dest}", "filename": file_obj.filename, "size": len(content)}
+
+
+@app.post("/api/v1/async-generate")
+async def async_generate(req: AsyncGenerateRequest):
+    """Enqueue a generation job and return a job_id immediately.
+
+    The client should poll GET /api/v1/jobs/{job_id} until status is completed/failed.
+    """
+    job_id = uuid.uuid4().hex
+    model_cfg = resolve_model_config_strict(req.model)
+    if not model_cfg:
+        raise HTTPException(400, f"Unknown model: {req.model}")
+
+    async with _jobs_lock:
+        async_jobs[job_id] = {
+            "status": "pending",
+            "model": req.model,
+            "prompt": req.prompt,
+            "created_at": time.time(),
+            "result": None,
+            "error": None,
+        }
+
+    async def _run_job():
+        try:
+            async with _jobs_lock:
+                if job_id in async_jobs:
+                    async_jobs[job_id]["status"] = "processing"
+
+            # Auto-swap pipeline if needed
+            if current_model is None or current_model.get("id") != model_cfg.get("id"):
+                if INFERENCE_ENGINE != "diffusers":
+                    raise HTTPException(503, "Model swap only available in diffusers engine mode")
+                if _gen_lock.locked() or pipeline_state == PipelineState.GENERATING:
+                    raise HTTPException(409, "Generation in progress, retry shortly")
+                if pipeline_state == PipelineState.LOADING:
+                    raise HTTPException(503, "Pipeline loading, please wait")
+                if is_ram_over_cap():
+                    raise HTTPException(503, {"error": "Server RAM over 85% cap, swap blocked"}, headers={"Retry-After": "30"})
+                log.info(f"Auto-swap (async): {current_model['name'] if current_model else 'none'} -> {model_cfg['name']}")
+                await asyncio.to_thread(swap_pipeline, model_cfg)
+
+            width, height = ar_to_size(req.aspect_ratio)
+            result = await generate(
+                req.prompt, width, height,
+                steps=req.steps, seed=req.seed,
+                cfg=req.guidance_scale, image=req.image_url,
+                request_id=job_id,
+            )
+
+            async with _jobs_lock:
+                if job_id in async_jobs:
+                    async_jobs[job_id]["status"] = "completed"
+                    async_jobs[job_id]["result"] = result
+        except HTTPException as he:
+            async with _jobs_lock:
+                if job_id in async_jobs:
+                    async_jobs[job_id]["status"] = "failed"
+                    async_jobs[job_id]["error"] = he.detail
+        except Exception as e:
+            log.error(f"Async job {job_id} failed: {e}")
+            async with _jobs_lock:
+                if job_id in async_jobs:
+                    async_jobs[job_id]["status"] = "failed"
+                    async_jobs[job_id]["error"] = str(e)
+
+    # Fire-and-forget background task
+    asyncio.create_task(_run_job())
+    return {"status": "processing", "job_id": job_id}
+
+
+@app.get("/api/v1/jobs/{job_id}")
+async def get_job(job_id: str):
+    """Poll the status of an async generation job."""
+    async with _jobs_lock:
+        job = async_jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    resp = {
+        "status": job["status"],
+        "model": job.get("model"),
+        "prompt": job.get("prompt"),
+        "created_at": job.get("created_at"),
+    }
+    if job["status"] == "completed":
+        resp["result"] = job.get("result")
+    elif job["status"] == "failed":
+        resp["error"] = job.get("error")
+    return resp
+
+
 @app.post("/api/v1/{model_endpoint:path}")
 async def muapi_generate(model_endpoint: str, req: MuapiRequest):
     # Skip non-generation endpoints
     if model_endpoint in ("swap-model", "remove-bg", "account/balance"):
         raise HTTPException(404, "Use dedicated endpoint")
+
+    # Auto-swap pipeline if requested model differs from current
+    model_cfg = resolve_model_config_strict(model_endpoint)
+    if not model_cfg:
+        raise HTTPException(400, f"Unknown model endpoint: {model_endpoint}")
+
+    if current_model is None or current_model.get("id") != model_cfg.get("id"):
+        if INFERENCE_ENGINE != "diffusers":
+            raise HTTPException(503, "Model swap only available in diffusers engine mode")
+        if _gen_lock.locked() or pipeline_state == PipelineState.GENERATING:
+            raise HTTPException(409, "Generation in progress, retry shortly")
+        if pipeline_state == PipelineState.LOADING:
+            raise HTTPException(503, "Pipeline loading, please wait")
+        if is_ram_over_cap():
+            raise HTTPException(503, {"error": "Server RAM over 85% cap, swap blocked"}, headers={"Retry-After": "30"})
+        log.info(f"Auto-swap: {current_model['name'] if current_model else 'none'} -> {model_cfg['name']}")
+        await asyncio.to_thread(swap_pipeline, model_cfg)
+
     width, height = ar_to_size(req.aspect_ratio)
     return await generate(req.prompt, width, height,
                           steps=req.steps, seed=req.seed,
@@ -713,13 +1036,43 @@ async def openai_generate(req: ImageRequest):
 async def account_balance():
     return {"balance": 999999.0, "currency": "LOCAL", "plan": "self-hosted"}
 
+
 @app.get("/api/v1/predictions/{request_id}/result")
 async def poll_result(request_id: str):
+    # Check for image result
     result_path = OUTPUT_DIR / f"{request_id}.png"
     if result_path.exists():
         b64 = base64.b64encode(result_path.read_bytes()).decode()
         return {"status": "completed", "outputs": [f"data:image/png;base64,{b64}"]}
+    # Check for video result
+    video_path = OUTPUT_DIR / f"{request_id}.mp4"
+    if video_path.exists():
+        b64 = base64.b64encode(video_path.read_bytes()).decode()
+        return {"status": "completed", "outputs": [f"data:video/mp4;base64,{b64}"]}
     return {"status": "processing"}
+
+
+# ─── Idle unload ──────────────────────────────────────────────────────────────
+
+_idle_unload_task = None
+IDLE_UNLOAD_SECONDS = int(os.environ.get("IDLE_UNLOAD_SECONDS", "300"))
+
+def _schedule_idle_unload():
+    """Start or reset the idle timer. After IDLE_UNLOAD_SECONDS of inactivity,
+    the pipeline is automatically unloaded to free VRAM."""
+    global _idle_unload_task
+    if _idle_unload_task:
+        _idle_unload_task.cancel()
+    _idle_unload_task = asyncio.create_task(_idle_unload_worker())
+
+async def _idle_unload_worker():
+    await asyncio.sleep(IDLE_UNLOAD_SECONDS)
+    if pipeline_state == PipelineState.READY and pipe is not None:
+        log.info(f"Idle for {IDLE_UNLOAD_SECONDS}s — auto-unloading pipeline to free VRAM")
+        unload_pipeline()
+
+
+
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -727,10 +1080,12 @@ async def poll_result(request_id: str):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", "8000"))
+    host = os.environ.get("HOST", "127.0.0.1")
 
     print(f"\n🎨 NQH Creative Studio Server v3.0 (Sprint 6)")
     print(f"   Engine: {INFERENCE_ENGINE}")
     print(f"   Models: {[m['name'] for m in MODEL_REGISTRY]}")
+    print(f"   Host: {host}")
     print(f"   Port: {port}")
 
     # Record memory baseline before loading any pipeline
@@ -740,15 +1095,17 @@ if __name__ == "__main__":
     # Always load utility models (regardless of INFERENCE_ENGINE)
     init_rembg()
 
-    if INFERENCE_ENGINE == "diffusers" and MODEL_REGISTRY:
-        default_model = MODEL_REGISTRY[0]
-        print(f"   Loading default model: {default_model['name']}...")
-        load_pipeline(default_model)
-        print(f"   ✅ Pipeline ready (RAM: {get_mps_memory()}MB)")
+    if FORCE_CPU:
+        print("   ⚠️  FORCE_CPU enabled — skipping Diffusers pipeline load (Luồng A)")
+        print("   ⚠️  Generation endpoints will return 503 until GPU stack fixed (Luồng B)")
+    elif INFERENCE_ENGINE == "diffusers" and MODEL_REGISTRY:
+        # Lazy-load: do NOT load a default model at startup to keep VRAM free.
+        # The first generation request will trigger the load via auto-swap.
+        print("   Lazy-load mode: no model loaded at startup (VRAM kept free)")
     elif INFERENCE_ENGINE == "mflux":
         print(f"   Using mflux subprocess (legacy fallback)")
 
     print(f"   Hot-swap: POST /api/v1/swap-model")
     print(f"   Health: GET /health")
     print()
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host=host, port=port)

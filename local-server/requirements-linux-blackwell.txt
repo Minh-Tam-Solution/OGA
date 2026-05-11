@@ -1,0 +1,22 @@
+# NQH Creative Studio — Python deps for Linux Blackwell GPUs (RTX 50xx)
+# Luồng B target: CUDA 12.8+ runtime with PyTorch nightly wheels.
+
+--pre
+--index-url https://download.pytorch.org/whl/nightly/cu128
+--extra-index-url https://pypi.org/simple
+
+torch
+torchvision
+torchaudio
+
+diffusers
+transformers
+accelerate
+safetensors
+peft
+sdnq
+platformdirs
+fastapi
+uvicorn
+rembg[cpu]
+psutil

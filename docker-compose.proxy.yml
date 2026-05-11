@@ -1,0 +1,27 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Nginx Proxy Manager (NPM) — Reverse Proxy + SSL for OGA on GPU Server S1
+# Usage: docker compose -f docker-compose.proxy.yml up -d
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      # Public HTTP
+      - "80:80"
+      # Public HTTPS
+      - "443:443"
+      # Admin UI (default: http://S1_IP:81)
+      - "81:81"
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+    environment:
+      # Optional: disable IPv6 if your network does not support it
+      - DISABLE_IPV6=true
+
+volumes:
+  npm-data:
+  npm-letsencrypt:

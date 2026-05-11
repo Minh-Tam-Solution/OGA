@@ -227,6 +227,13 @@ export class MuapiClient {
             const submitData = await response.json();
             _log('[Muapi] Video Submit Response:', submitData);
 
+            // Local mode (FastAPI) returns completed result immediately with outputs
+            if (this.isLocal && submitData.outputs?.length > 0) {
+                _log('[Muapi] Local mode — result ready immediately');
+                const videoUrl = submitData.outputs[0];
+                return { ...submitData, url: videoUrl };
+            }
+
             const requestId = submitData.request_id || submitData.id;
             if (!requestId) return submitData;
 
@@ -243,6 +250,72 @@ export class MuapiClient {
             console.error("Muapi Video Client Error:", error);
             throw error;
         }
+    }
+
+    /**
+     * Async video generation for local diffusers (CogVideoX, AnimateDiff).
+     * Enqueues a job and polls until completion. Avoids 504 timeouts on long generations.
+     */
+    async generateVideoAsync(params) {
+        const key = this.getKey();
+        const url = `${this.baseUrl}/api/v1/async-generate`;
+
+        const finalPayload = {
+            model: params.model,
+            prompt: params.prompt || '',
+        };
+        if (params.aspect_ratio) finalPayload.aspect_ratio = params.aspect_ratio;
+        if (params.image_url) finalPayload.image_url = params.image_url;
+        if (params.steps != null) finalPayload.steps = params.steps;
+        if (params.guidance_scale != null) finalPayload.guidance_scale = params.guidance_scale;
+        if (params.seed != null) finalPayload.seed = params.seed;
+
+        _log('[Muapi] Async Video Request:', url, finalPayload);
+
+        const submitRes = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': key },
+            body: JSON.stringify(finalPayload),
+        });
+        if (!submitRes.ok) {
+            const errText = await submitRes.text();
+            throw new Error(`Async submit failed: ${submitRes.status} ${submitRes.statusText} — ${errText.slice(0, 200)}`);
+        }
+        const submitData = await submitRes.json();
+        const jobId = submitData.job_id;
+        if (!jobId) throw new Error('No job_id returned from async-generate');
+
+        _log('[Muapi] Async job enqueued:', jobId);
+        if (params.onStatus) params.onStatus('queued', jobId);
+
+        // Poll every 5 seconds, up to ~15 minutes (180 attempts)
+        const maxAttempts = 180;
+        const intervalMs = 5000;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            await new Promise(r => setTimeout(r, intervalMs));
+            if (params.onStatus) params.onStatus('polling', attempt + 1);
+            const pollRes = await fetch(`${this.baseUrl}/api/v1/jobs/${jobId}`, {
+                headers: { 'x-api-key': key },
+            });
+            if (!pollRes.ok) {
+                const errText = await pollRes.text();
+                console.warn(`[Muapi] Poll error ${pollRes.status}:`, errText.slice(0, 200));
+                continue;
+            }
+            const data = await pollRes.json();
+            _log('[Muapi] Poll status:', data.status, attempt);
+            if (data.status === 'completed') {
+                if (params.onStatus) params.onStatus('completed');
+                const result = data.result || {};
+                const videoUrl = result.outputs?.[0] || result.url;
+                return { ...result, url: videoUrl, job_id: jobId };
+            }
+            if (data.status === 'failed') {
+                throw new Error(data.error || `Job ${jobId} failed`);
+            }
+            // still pending/processing — keep polling
+        }
+        throw new Error(`Async job ${jobId} timed out after ${maxAttempts * intervalMs / 1000}s`);
     }
 
     /**

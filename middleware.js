@@ -8,7 +8,7 @@ const ACCESS_PIN = process.env.ACCESS_PIN || '';
 const SESSION_SECRET = process.env.SESSION_SECRET || process.env.ACCESS_PIN || 'nqh-fallback';
 
 // Paths excluded from PIN gate (unauthenticated)
-const AUTH_EXCLUDED = ['/api/health', '/api/auth/verify', '/auth', '/_next', '/favicon.ico'];
+const AUTH_EXCLUDED = ['/api/health', '/api/auth/verify', '/api/v1/upload_file', '/auth', '/_next', '/favicon.ico'];
 
 function isAuthExcluded(pathname) {
     return AUTH_EXCLUDED.some(p => pathname.startsWith(p));

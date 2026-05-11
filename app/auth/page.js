@@ -11,25 +11,34 @@ export default function AuthPage() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!pin.trim()) return;
+        e.stopPropagation();
+        const cleanPin = pin.trim();
+        if (!cleanPin) return;
         setLoading(true);
         setError('');
 
         try {
+            console.log('[Auth] Submitting PIN...');
             const res = await fetch('/api/auth/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ pin: pin.trim() }),
+                body: JSON.stringify({ pin: cleanPin }),
             });
+            console.log('[Auth] Response status:', res.status);
             if (res.ok) {
+                console.log('[Auth] PIN accepted, redirecting...');
                 router.push('/');
+                // Fallback: force reload if router.push stalls
+                setTimeout(() => { window.location.href = '/'; }, 1000);
             } else {
-                const data = await res.json();
+                const data = await res.json().catch(() => ({}));
+                console.log('[Auth] PIN rejected:', data.error);
                 setError(data.error || 'Invalid PIN');
                 setPin('');
             }
-        } catch {
-            setError('Connection error');
+        } catch (err) {
+            console.error('[Auth] Connection error:', err);
+            setError('Connection error — check console');
         } finally {
             setLoading(false);
         }
@@ -64,7 +73,7 @@ export default function AuthPage() {
                     )}
                     <button
                         type="submit"
-                        disabled={loading || !pin.trim()}
+                        disabled={!pin.trim()}
                         className="w-full bg-[#d9ff00] text-black font-bold py-3 rounded-xl hover:bg-[#e5ff33] disabled:opacity-50 transition-all"
                     >
                         {loading ? 'Verifying...' : 'Enter'}

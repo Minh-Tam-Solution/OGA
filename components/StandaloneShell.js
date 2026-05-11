@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ImageStudio as CloudImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, MarketingStudio, WorkflowStudio, AgentStudio, AppsStudio, getUserBalance } from 'studio';
+import { ImageStudio as CloudImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, MarketingStudio, WorkflowStudio, AgentStudio, AppsStudio, VoiceStudio, getUserBalance } from 'studio';
 import { ImageStudio as createLocalImageStudio } from '../src/components/ImageStudio.js';
+import { VideoStudio as createLocalVideoStudio } from '../src/components/VideoStudio.js';
 import axios from 'axios';
 import ApiKeyModal from './ApiKeyModal';
 
@@ -23,7 +24,22 @@ function LocalImageStudioWrapper() {
   return <div ref={containerRef} className="w-full h-full" />;
 }
 
+// Wrap vanilla DOM VideoStudio into React component for local mode
+function LocalVideoStudioWrapper() {
+  const containerRef = useRef(null);
+  const mountedRef = useRef(false);
+  useLayoutEffect(() => {
+    if (containerRef.current && !mountedRef.current) {
+      mountedRef.current = true;
+      const el = createLocalVideoStudio();
+      containerRef.current.appendChild(el);
+    }
+  }, []);
+  return <div ref={containerRef} className="w-full h-full" />;
+}
+
 const ImageStudio = _isLocal ? LocalImageStudioWrapper : CloudImageStudio;
+const LocalVideoStudio = _isLocal ? LocalVideoStudioWrapper : VideoStudio;
 const _wan2gpEnabled = process.env.NEXT_PUBLIC_WAN2GP_ENABLED === 'true';
 
 const TABS = [
@@ -32,6 +48,7 @@ const TABS = [
   { id: 'lipsync', label: 'Lip Sync',          comingSoon: false },
   { id: 'cinema',  label: 'Cinema Studio',     comingSoon: false },
   { id: 'marketing', label: 'Marketing Studio', comingSoon: false },
+  { id: 'voice',   label: 'Voice Studio',      comingSoon: false },
   // Workflows, Agents, Apps hidden in local mode
   ...(_isLocal ? [] : [
     { id: 'workflows', label: 'Workflows' },
@@ -343,10 +360,11 @@ export default function StandaloneShell() {
       {/* Studio Content */}
       <div className="flex-1 min-h-0 relative overflow-hidden">
         {activeTab === 'image'   && <ImageStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
-        {activeTab === 'video'   && <VideoStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
+        {activeTab === 'video'   && <LocalVideoStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
         {activeTab === 'lipsync' && <LipSyncStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} isLocal={_isLocal} />}
         {activeTab === 'cinema'  && <CinemaStudio apiKey={apiKey} isLocal={_isLocal} />}
         {activeTab === 'marketing' && <MarketingStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
+        {activeTab === 'voice' && <VoiceStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
         {activeTab === 'workflows' && <WorkflowStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />}
         {activeTab === 'agents' && <AgentStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />}
         {activeTab === 'apps' && <AppsStudio apiKey={apiKey} />}

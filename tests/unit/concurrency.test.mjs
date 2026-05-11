@@ -12,7 +12,7 @@ function startServer() {
         const pythonPath = resolve(PROJECT_ROOT, '.venv/bin/python3');
         const proc = spawn(pythonPath, ['local-server/server.py'], {
             cwd: PROJECT_ROOT,
-            env: { ...process.env, INFERENCE_ENGINE: 'diffusers', PORT: '8005' },
+            env: { ...process.env, INFERENCE_ENGINE: 'diffusers', PORT: '8005', OGA_FORCE_CPU: 'true' },
         });
         let stderr = '';
         let stdout = '';
@@ -25,7 +25,7 @@ function startServer() {
         }, 60000);
 
         const checkReady = setInterval(() => {
-            if (stderr.includes('Pipeline ready') || stdout.includes('Application startup complete') || stderr.includes('Application startup complete')) {
+            if (stderr.includes('Pipeline ready') || stderr.includes('FORCE_CPU enabled') || stdout.includes('Application startup complete') || stderr.includes('Application startup complete')) {
                 clearTimeout(timeout);
                 clearInterval(checkReady);
                 serverProc = proc;
@@ -61,6 +61,14 @@ async function fetchJson(path, opts = {}) {
 
 describe('Concurrency — runtime contract', () => {
     beforeAll(async () => {
+        // If external server is already running, skip spawning our own
+        try {
+            const res = await fetch(serverUrl + '/health');
+            if (res.ok) {
+                console.log('Using external server on', serverUrl);
+                return;
+            }
+        } catch {}
         await startServer();
     }, 65000);
 

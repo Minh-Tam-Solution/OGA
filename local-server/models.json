@@ -2,7 +2,7 @@
     {
         "id": "Disty0/Z-Image-Turbo-SDNQ-uint4-svd-r32",
         "backup_id": "SamuelTallet/Z-Image-Turbo-SDNQ-uint4-svd-r32",
-        "frontend_ids": ["z-image-turbo", "z-image-base", "flux-schnell", "dreamshaper-8"],
+        "frontend_ids": ["z-image-turbo", "z-image-base", "flux-schnell"],
         "name": "Z-Image Turbo",
         "pipeline": "ZImagePipeline",
         "model_type": "diffusers",
@@ -46,15 +46,73 @@
         "ram_gb": 5
     },
     {
-        "id": "guoyww/animatediff-motion-adapter-v1-5-2",
-        "frontend_ids": ["animatediff", "cinema"],
-        "name": "AnimateDiff Lightning",
-        "pipeline": "AnimateDiffPipeline",
+        "id": "Lykon/DreamShaper",
+        "frontend_ids": ["dreamshaper-8"],
+        "name": "Dreamshaper 8",
+        "pipeline": "StableDiffusionPipeline",
         "model_type": "diffusers",
-        "base_model": "runwayml/stable-diffusion-v1-5",
-        "motion_adapter": "guoyww/animatediff-motion-adapter-v1-5-2",
-        "default": {"steps": 4, "cfg": 1.0, "num_frames": 16},
-        "features": ["text-to-video", "cinema"],
-        "ram_gb": 6
+        "default": {"steps": 20, "cfg": 7.5},
+        "features": ["text-to-image", "image-to-image"],
+        "ram_gb": 4
+    },
+    {
+        "id": "SG161222/Realistic_Vision_V5.1_noVAE",
+        "frontend_ids": ["realistic-vision-v51"],
+        "name": "Realistic Vision v5.1",
+        "pipeline": "StableDiffusionPipeline",
+        "model_type": "diffusers",
+        "default": {"steps": 25, "cfg": 7.0},
+        "features": ["text-to-image", "image-to-image"],
+        "ram_gb": 4
+    },
+    {
+        "id": "stablediffusionapi/anything-v5",
+        "frontend_ids": ["anything-v5"],
+        "name": "Anything v5",
+        "pipeline": "StableDiffusionPipeline",
+        "model_type": "diffusers",
+        "default": {"steps": 20, "cfg": 7.0},
+        "features": ["text-to-image", "image-to-image"],
+        "ram_gb": 4
+    },
+    {
+        "id": "stabilityai/stable-diffusion-xl-base-1.0",
+        "frontend_ids": ["stable-diffusion-xl-base"],
+        "name": "SDXL Base 1.0",
+        "pipeline": "StableDiffusionXLPipeline",
+        "model_type": "diffusers",
+        "default": {"steps": 30, "cfg": 7.5},
+        "features": ["text-to-image", "image-to-image"],
+        "ram_gb": 8
+    },
+    {
+        "id": "/home/nqh/shared/models/cogvideox",
+        "frontend_ids": ["cogvideox-5b"],
+        "name": "CogVideoX 5B",
+        "pipeline": "CogVideoXPipeline",
+        "model_type": "diffusers",
+        "default": {"steps": 25, "cfg": 6.0, "num_frames": 16, "fps": 8},
+        "features": ["text-to-video"],
+        "ram_gb": 18
+    },
+    {
+        "id": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+        "frontend_ids": ["wan2.1-t2v-1.3b"],
+        "name": "Wan2.1 T2V 1.3B",
+        "pipeline": "WanPipeline",
+        "model_type": "diffusers",
+        "default": {"steps": 30, "cfg": 1.0, "num_frames": 81, "fps": 16, "flow_shift": 3.0},
+        "features": ["text-to-video"],
+        "ram_gb": 12
+    },
+    {
+        "id": "Lightricks/LTX-Video",
+        "frontend_ids": ["ltx-video"],
+        "name": "LTX-Video",
+        "pipeline": "LTXPipeline",
+        "model_type": "diffusers",
+        "default": {"steps": 30, "cfg": 3.0, "num_frames": 65, "fps": 24},
+        "features": ["text-to-video"],
+        "ram_gb": 10
     }
 ]

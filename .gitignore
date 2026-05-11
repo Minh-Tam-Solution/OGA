@@ -51,3 +51,7 @@ local-server/tests/__pycache__/
 .claude/
 .endiorbot/
 .sdlc-framework
+
+# Benchmark output artifacts (regeneratable, large binaries)
+tests/benchmark-output/
+

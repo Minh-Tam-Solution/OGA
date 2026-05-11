@@ -4,14 +4,15 @@ import { AuthModal } from './AuthModal.js';
 import { createUploadPicker } from './UploadPicker.js';
 import { savePendingJob, removePendingJob, getPendingJobs } from '../lib/pendingJobs.js';
 import { localAI, isLocalAIAvailable } from '../lib/localInferenceClient.js';
-import { isWan2gpModelId, getLocalModelById, localT2VModels, localI2VModels } from '../lib/localModels.js';
+import { isWan2gpModelId, isLocalModelId, getLocalModelById, localT2VModels, localI2VModels } from '../lib/localModels.js';
+import { isLocalMode } from '../lib/providerConfig.js';
 
-// Promotes a wan2gp catalog entry (lib/localModels.js shape) into the
+// Promotes a local catalog entry (lib/localModels.js shape) into the
 // `inputs`-shaped descriptor the Video Studio dropdowns/controls expect.
 const adaptLocalToVideoEntry = (m) => ({
     id: m.id,
     name: m.name,
-    provider: 'wan2gp',
+    provider: m.provider || 'wan2gp',
     inputs: {
         prompt: { type: 'string', name: 'prompt', title: 'Prompt' },
         aspect_ratio: { type: 'string', name: 'aspect_ratio', enum: m.aspectRatios || ['16:9', '1:1', '9:16'], default: (m.aspectRatios || ['16:9'])[0] },
@@ -22,14 +23,16 @@ export function VideoStudio() {
     const container = document.createElement('div');
     container.className = 'w-full h-full flex flex-col items-center justify-center bg-app-bg relative p-4 md:p-6 overflow-y-auto custom-scrollbar overflow-x-hidden';
 
-    // Merge Wan2GP video models in only when running inside Electron AND the
-    // user has a Wan2GP server configured. We can't probe synchronously, so
-    // we always include them when isLocalAIAvailable() — getCurrentModel()
-    // reads from these arrays, so they need to be present from init.
-    const localT2V = isLocalAIAvailable() ? localT2VModels.map(adaptLocalToVideoEntry) : [];
-    const localI2V = isLocalAIAvailable() ? localI2VModels.map(adaptLocalToVideoEntry) : [];
-    const allT2V = [...t2vModels, ...localT2V];
-    const allI2V = [...i2vModels, ...localI2V];
+    // Merge local video models in when running in local mode (web or Electron).
+    // Local mode includes both wan2gp and local-diffusers providers.
+    const isLocal = isLocalMode();
+    const includeLocal = isLocal || isLocalAIAvailable();
+    const localT2V = includeLocal ? localT2VModels.map(adaptLocalToVideoEntry) : [];
+    const localI2V = includeLocal ? localI2VModels.map(adaptLocalToVideoEntry) : [];
+    // In local mode, show ONLY local models; hide all cloud entries
+    const allT2V = isLocal ? localT2V : [...t2vModels, ...localT2V];
+    const allI2V = isLocal ? localI2V : [...i2vModels, ...localI2V];
+
 
     // --- State ---
     const defaultModel = allT2V[0];
@@ -421,6 +424,30 @@ export function VideoStudio() {
     promptWrapper.appendChild(bar);
     container.appendChild(promptWrapper);
 
+    // --- Generation progress bar (indeterminate for local diffusers) ---
+    const genProgressWrap = document.createElement('div');
+    genProgressWrap.className = 'w-full max-w-4xl mt-4 hidden flex-col gap-2 animate-fade-in-up';
+    genProgressWrap.id = 'v-gen-progress-wrap';
+    genProgressWrap.innerHTML = `
+        <div class="flex items-center justify-between">
+            <span id="v-gen-status" class="text-xs font-bold text-white/60">Generating video...</span>
+            <span id="v-gen-pct" class="text-xs font-bold text-primary">—</span>
+        </div>
+        <div class="h-1.5 rounded-full bg-white/10 overflow-hidden relative">
+            <div id="v-gen-fill" class="h-full bg-primary absolute inset-y-0 left-0 w-1/3" style="animation: vShimmer 1.2s ease-in-out infinite;"></div>
+        </div>
+        <style>
+            @keyframes vShimmer {
+                0% { left: -33%; }
+                100% { left: 100%; }
+            }
+        </style>
+        <div class="flex justify-end">
+            <button id="v-gen-cancel" class="text-xs text-red-400 hover:text-red-300 transition-colors">Cancel</button>
+        </div>
+    `;
+    container.appendChild(genProgressWrap);
+
     // ==========================================
     // 3. DROPDOWNS
     // ==========================================
@@ -598,14 +625,16 @@ export function VideoStudio() {
                     .filter(m => m.name.toLowerCase().includes(lf) || m.id.toLowerCase().includes(lf));
                 filteredMain.forEach(m => list.appendChild(makeModelItem(m, false)));
 
-                // Video Tools section
-                const filteredV2V = v2vModels.filter(m => m.name.toLowerCase().includes(lf) || m.id.toLowerCase().includes(lf));
-                if (filteredV2V.length > 0) {
-                    const sectionLabel = document.createElement('div');
-                    sectionLabel.className = 'text-[10px] font-bold text-orange-400/70 uppercase tracking-widest px-3 py-2 mt-1 border-t border-white/5';
-                    sectionLabel.textContent = 'Video Tools';
-                    list.appendChild(sectionLabel);
-                    filteredV2V.forEach(m => list.appendChild(makeModelItem(m, true)));
+                // Video Tools section (hide in local mode — v2v requires cloud API)
+                if (!isLocal) {
+                    const filteredV2V = v2vModels.filter(m => m.name.toLowerCase().includes(lf) || m.id.toLowerCase().includes(lf));
+                    if (filteredV2V.length > 0) {
+                        const sectionLabel = document.createElement('div');
+                        sectionLabel.className = 'text-[10px] font-bold text-orange-400/70 uppercase tracking-widest px-3 py-2 mt-1 border-t border-white/5';
+                        sectionLabel.textContent = 'Video Tools';
+                        list.appendChild(sectionLabel);
+                        filteredV2V.forEach(m => list.appendChild(makeModelItem(m, true)));
+                    }
                 }
             };
 
@@ -878,7 +907,26 @@ export function VideoStudio() {
     // --- Helper: Add to history ---
     const addToHistory = (entry) => {
         generationHistory.unshift(entry);
-        localStorage.setItem('video_history', JSON.stringify(generationHistory.slice(0, 30)));
+        // Strip base64 data URLs before storing to avoid localStorage quota overflow
+        const storable = generationHistory.slice(0, 5).map(e => {
+            const clone = { ...e };
+            if (clone.url && clone.url.startsWith('data:')) delete clone.url;
+            return clone;
+        });
+        try {
+            localStorage.setItem('video_history', JSON.stringify(storable));
+        } catch (err) {
+            if (err.name === 'QuotaExceededError' || err.code === 22) {
+                // Evict oldest entries until it fits
+                while (storable.length > 1) {
+                    storable.pop();
+                    try {
+                        localStorage.setItem('video_history', JSON.stringify(storable));
+                        break;
+                    } catch (e2) { /* continue shrinking */ }
+                }
+            }
+        }
         historySidebar.classList.remove('translate-x-full', 'opacity-0');
         historySidebar.classList.add('translate-x-0', 'opacity-100');
         renderHistory();
@@ -891,10 +939,13 @@ export function VideoStudio() {
             thumb.className = `relative group/thumb cursor-pointer rounded-xl overflow-hidden border-2 transition-all duration-300 ${idx === 0 ? 'border-primary shadow-glow' : 'border-white/10 hover:border-white/30'}`;
 
             thumb.innerHTML = `
-                <video src="${entry.url}" preload="metadata" muted class="w-full aspect-square object-cover"></video>
+                ${entry.url ? `<video src="${entry.url}" preload="metadata" muted class="w-full aspect-square object-cover"></video>` : `<div class="w-full aspect-square bg-white/5 flex items-center justify-center text-white/20 text-xs">No preview</div>`}
                 <div class="absolute inset-0 bg-black/60 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center gap-1">
                     <button class="hist-download p-1.5 bg-primary rounded-lg text-black hover:scale-110 transition-transform" title="Download">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                    </button>
+                    <button class="hist-delete p-1.5 bg-red-500 rounded-lg text-white hover:scale-110 transition-transform" title="Delete">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg>
                     </button>
                 </div>
             `;
@@ -902,6 +953,20 @@ export function VideoStudio() {
             thumb.onclick = (e) => {
                 if (e.target.closest('.hist-download')) {
                     downloadFile(entry.url, `video-${entry.id || idx}.mp4`);
+                    return;
+                }
+                if (e.target.closest('.hist-delete')) {
+                    if (!confirm('Delete this video from history?')) return;
+                    generationHistory.splice(idx, 1);
+                    const storable = generationHistory.slice(0, 5).map(e => {
+                        const clone = { ...e };
+                        if (clone.url && clone.url.startsWith('data:')) delete clone.url;
+                        return clone;
+                    });
+                    try {
+                        localStorage.setItem('video_history', JSON.stringify(storable));
+                    } catch (err) { /* ignore quota errors on delete */ }
+                    renderHistory();
                     return;
                 }
                 // Restore extend context when viewing a seedance-v2.0 generation
@@ -1071,9 +1136,11 @@ export function VideoStudio() {
             }
         }
 
-        const isLocal = isWan2gpModelId(selectedModel);
+        const isWan2gp = isWan2gpModelId(selectedModel);
+        const isLocalDiffusers = isLocalModelId(selectedModel) && !isWan2gp;
+        const isLocal = isWan2gp || isLocalDiffusers;
 
-        // Local Wan2GP generations don't go through Muapi — skip the auth gate.
+        // Local generations don't go through Muapi cloud — skip the auth gate.
         if (!isLocal) {
             const apiKey = localStorage.getItem('muapi_key');
             if (!apiKey) {
@@ -1085,6 +1152,15 @@ export function VideoStudio() {
         hero.classList.add('opacity-0', 'scale-95', '-translate-y-10', 'pointer-events-none');
         generateBtn.disabled = true;
         generateBtn.innerHTML = `<span class="animate-spin inline-block mr-2 text-black">◌</span> Generating...`;
+
+        // Show progress bar for local diffusers (AnimateDiff etc.)
+        const genProgressWrap = document.getElementById('v-gen-progress-wrap');
+        const genStatusLabel = document.getElementById('v-gen-status');
+        if (isLocalDiffusers && genProgressWrap) {
+            genProgressWrap.classList.remove('hidden');
+            genProgressWrap.classList.add('flex');
+            if (genStatusLabel) genStatusLabel.textContent = 'Loading model...';
+        }
 
         // For local generations, surface step progress in the button label.
         let unsubscribeProgress = null;
@@ -1105,29 +1181,62 @@ export function VideoStudio() {
         };
 
         try {
-            // ─── Local Wan2GP path ───────────────────────────────────────────
-            // Uploaded image URLs were minted by uploadFileToWan2gp(), so
-            // wan2gpProvider can rehydrate the Gradio file descriptor.
+            // ─── Local path (Wan2GP or diffusers) ────────────────────────────
             if (isLocal) {
-                const localParams = {
-                    model: selectedModel,
-                    prompt: prompt || '',
-                    aspect_ratio: selectedAr,
-                };
-                if (imageMode && uploadedImageUrl) localParams.image = uploadedImageUrl;
-                const res = await localAI.generate(localParams);
-                console.log('[VideoStudio] Local response:', res);
-                if (res && res.url) {
-                    const genId = Date.now().toString();
-                    lastGenerationId = null;
-                    lastGenerationModel = null;
-                    addToHistory({ id: genId, url: res.url, prompt, model: selectedModel, aspect_ratio: selectedAr, timestamp: new Date().toISOString() });
-                    showVideoInCanvas(res.url, selectedModel);
+                if (isWan2gp) {
+                    // Wan2GP: Uploaded image URLs were minted by uploadFileToWan2gp()
+                    const localParams = {
+                        model: selectedModel,
+                        prompt: prompt || '',
+                        aspect_ratio: selectedAr,
+                    };
+                    if (imageMode && uploadedImageUrl) localParams.image = uploadedImageUrl;
+                    const res = await localAI.generate(localParams);
+                    console.log('[VideoStudio] Wan2GP response:', res);
+                    if (res && res.url) {
+                        const genId = Date.now().toString();
+                        lastGenerationId = null;
+                        lastGenerationModel = null;
+                        addToHistory({ id: genId, url: res.url, prompt, model: selectedModel, aspect_ratio: selectedAr, timestamp: new Date().toISOString() });
+                        showVideoInCanvas(res.url, selectedModel);
+                    } else {
+                        throw new Error('No video URL returned by Wan2GP');
+                    }
                 } else {
-                    throw new Error('No video URL returned by Wan2GP');
+                    // Local diffusers (e.g. AnimateDiff / CogVideoX on GPU Server S1)
+                    // Use async endpoint to avoid nginx 504 timeouts on long generations
+                    if (genStatusLabel) genStatusLabel.textContent = 'Enqueuing job...';
+                    const localParams = {
+                        model: selectedModel,
+                        prompt: prompt || '',
+                        aspect_ratio: selectedAr,
+                        onStatus: (status, meta) => {
+                            if (genStatusLabel) {
+                                if (status === 'queued') genStatusLabel.textContent = 'Job queued — starting soon...';
+                                else if (status === 'polling') genStatusLabel.textContent = `Generating... (poll #${meta})`;
+                                else if (status === 'completed') genStatusLabel.textContent = 'Finalizing...';
+                            }
+                        },
+                    };
+                    if (imageMode && uploadedImageUrl) localParams.image_url = uploadedImageUrl;
+                    const res = await muapi.generateVideoAsync(localParams);
+                    console.log('[VideoStudio] Local diffusers async response:', res);
+                    if (res && res.url) {
+                        const genId = Date.now().toString();
+                        lastGenerationId = null;
+                        lastGenerationModel = null;
+                        addToHistory({ id: genId, url: res.url, prompt, model: selectedModel, aspect_ratio: selectedAr, timestamp: new Date().toISOString() });
+                        showVideoInCanvas(res.url, selectedModel);
+                    } else {
+                        throw new Error('No video URL returned by local server');
+                    }
                 }
                 generateBtn.disabled = false;
                 generateBtn.innerHTML = `Generate ✨`;
+                if (genProgressWrap) {
+                    genProgressWrap.classList.add('hidden');
+                    genProgressWrap.classList.remove('flex');
+                }
                 return;
             }
 
@@ -1251,11 +1360,21 @@ export function VideoStudio() {
             setTimeout(() => {
                 generateBtn.innerHTML = `Generate ✨`;
             }, 4000);
+            if (genProgressWrap) {
+                genProgressWrap.classList.add('hidden');
+                genProgressWrap.classList.remove('flex');
+            }
         } finally {
             generateBtn.disabled = false;
             if (typeof unsubscribeProgress === 'function') unsubscribeProgress();
             // Only reset the label on success; the catch timeout handles the error case
-            if (!hadError) generateBtn.innerHTML = `Generate ✨`;
+            if (!hadError) {
+                generateBtn.innerHTML = `Generate ✨`;
+                if (genProgressWrap) {
+                    genProgressWrap.classList.add('hidden');
+                    genProgressWrap.classList.remove('flex');
+                }
+            }
         }
     };
 

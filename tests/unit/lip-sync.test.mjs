@@ -82,10 +82,10 @@ describe('Lip Sync — models.json schema', () => {
         }
     });
 
-    it('has AnimateDiff entry (from Sprint 7)', () => {
+    // AnimateDiff retired after Sprint 7 spike FAIL — see ADR-005 v2.0
+    it('does NOT have retired AnimateDiff entry', () => {
         const ad = models.find(m => m.id === 'guoyww/animatediff-motion-adapter-v1-5-2');
-        expect(ad).toBeDefined();
-        expect(ad.model_type).toBe('diffusers');
+        expect(ad).toBeUndefined();
     });
 
     it('has IP-Adapter entry (from Sprint 7)', () => {

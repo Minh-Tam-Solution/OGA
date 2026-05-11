@@ -28,7 +28,11 @@ export function ImageStudio() {
     container.className = 'w-full h-full flex flex-col items-center justify-center bg-app-bg relative p-4 md:p-6 overflow-y-auto custom-scrollbar overflow-x-hidden';
 
     // --- State ---
-    const defaultModel = isLocalMode() ? (LOCAL_MODEL_CATALOG.filter(m => m.type !== 'video')[0] || t2iModels[0]) : t2iModels[0];
+    // In local mode, default to Realistic Vision v5.1 for best photorealism.
+    // Fall back to first available local model if RV isn't in the catalog.
+    const localImageModels = LOCAL_MODEL_CATALOG.filter(m => m.type !== 'video');
+    const preferredLocalDefault = localImageModels.find(m => m.id === 'realistic-vision-v51') || localImageModels[0];
+    const defaultModel = isLocalMode() ? (preferredLocalDefault || t2iModels[0]) : t2iModels[0];
     let selectedModel = defaultModel.id;
     let selectedModelName = defaultModel.name;
     let selectedAr = defaultModel.inputs?.aspect_ratio?.default || '1:1';
@@ -41,7 +45,7 @@ export function ImageStudio() {
     // Wan2GP video models (type='video') are hidden from ImageStudio.
     const LOCAL_IMAGE_MODELS = LOCAL_MODEL_CATALOG.filter(m => m.type !== 'video');
     let useLocalModel = isLocalMode() || false;
-    let selectedLocalModel = LOCAL_IMAGE_MODELS[0]?.id || null;
+    let selectedLocalModel = preferredLocalDefault?.id || LOCAL_IMAGE_MODELS[0]?.id || null;
     let localGenProgress = 0; // 0–1
 
     // Advanced parameters state
@@ -72,7 +76,7 @@ export function ImageStudio() {
     // 1. HERO SECTION
     // ==========================================
     const hero = document.createElement('div');
-    hero.className = 'flex flex-col items-center mb-10 md:mb-20 animate-fade-in-up transition-all duration-700';
+    hero.className = 'flex flex-col items-center mb-6 md:mb-12 animate-fade-in-up transition-all duration-700';
     hero.innerHTML = `
         <div class="mb-10 relative group">
              <div class="absolute inset-0 bg-primary/20 blur-[100px] rounded-full opacity-40 group-hover:opacity-70 transition-opacity duration-1000"></div>
@@ -91,7 +95,7 @@ export function ImageStudio() {
                 <div class="absolute top-4 right-4 text-primary animate-pulse">✨</div>
              </div>
         </div>
-        <h1 class="text-2xl sm:text-4xl md:text-7xl font-black text-white tracking-widest uppercase mb-4 selection:bg-primary selection:text-black text-center px-4">Image Studio</h1>
+        <h1 class="text-2xl sm:text-4xl md:text-5xl font-black text-white tracking-widest uppercase mb-4 selection:bg-primary selection:text-black text-center px-4">Image Studio</h1>
         <p class="text-secondary text-sm font-medium tracking-wide opacity-60">Transform images with AI — upscale, stylize, animate and more</p>
     `;
     container.appendChild(hero);
@@ -119,9 +123,16 @@ export function ImageStudio() {
             uploadedImageUrls = urls || [url];
             if (!imageMode) {
                 imageMode = true;
-                selectedModel = i2iModels[0].id;
-                selectedModelName = i2iModels[0].name;
-                selectedAr = getAspectRatiosForI2IModel(selectedModel)[0];
+                if (useLocalModel) {
+                    const lm = getLocalModelById(selectedLocalModel);
+                    selectedModel = lm?.id || selectedLocalModel;
+                    selectedModelName = lm?.name || 'Local';
+                    selectedAr = lm?.aspectRatios?.[0] || '1:1';
+                } else {
+                    selectedModel = i2iModels[0].id;
+                    selectedModelName = i2iModels[0].name;
+                    selectedAr = getAspectRatiosForI2IModel(selectedModel)[0];
+                }
                 document.getElementById('model-btn-label').textContent = selectedModelName;
                 document.getElementById('ar-btn-label').textContent = selectedAr;
                 const validResolutions = getResolutionsForI2IModel(selectedModel);
@@ -136,9 +147,16 @@ export function ImageStudio() {
         onClear: () => {
             uploadedImageUrls = [];
             imageMode = false;
-            selectedModel = t2iModels[0].id;
-            selectedModelName = t2iModels[0].name;
-            selectedAr = getAspectRatiosForModel(selectedModel)[0];
+            if (useLocalModel) {
+                const lm = getLocalModelById(selectedLocalModel);
+                selectedModel = lm?.id || selectedLocalModel;
+                selectedModelName = lm?.name || 'Local';
+                selectedAr = lm?.aspectRatios?.[0] || '1:1';
+            } else {
+                selectedModel = t2iModels[0].id;
+                selectedModelName = t2iModels[0].name;
+                selectedAr = getAspectRatiosForModel(selectedModel)[0];
+            }
             document.getElementById('model-btn-label').textContent = selectedModelName;
             document.getElementById('ar-btn-label').textContent = selectedAr;
             const t2iResolutions = getResolutionsForModel(selectedModel);
@@ -706,7 +724,7 @@ export function ImageStudio() {
     // 3. DROPDOWNS (Professional implementation)
     // ==========================================
     const dropdown = document.createElement('div');
-    dropdown.className = 'absolute bottom-[102%] left-2 z-50 transition-all opacity-0 pointer-events-none scale-95 origin-bottom-left glass rounded-3xl p-3 translate-y-2 w-[calc(100vw-3rem)] max-w-xs shadow-4xl border border-white/10 flex flex-col';
+    dropdown.className = 'absolute bottom-[102%] left-2 z-50 transition-all opacity-0 pointer-events-none scale-95 origin-bottom-left bg-[#0f0f0f]/95 backdrop-blur-xl rounded-3xl p-3 translate-y-2 w-[calc(100vw-3rem)] max-w-xs shadow-4xl border border-white/10 flex flex-col';
 
     const showDropdown = (type, anchorBtn) => {
         dropdown.innerHTML = '';
@@ -721,7 +739,7 @@ export function ImageStudio() {
                     <div class="px-2 pb-3 mb-2 border-b border-white/5 shrink-0">
                         <div class="flex items-center gap-3 bg-white/5 rounded-xl px-4 py-2.5 border border-white/5 focus-within:border-primary/50 transition-colors">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="text-muted"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                            <input type="text" id="model-search" placeholder="Search models..." class="bg-transparent border-none text-xs text-white focus:ring-0 w-full p-0">
+                            <input type="text" id="model-search" placeholder="Search models..." class="bg-transparent border-none text-xs text-secondary focus:ring-0 w-full p-0">
                         </div>
                     </div>
                     <div class="text-[10px] font-bold text-secondary uppercase tracking-widest px-3 py-2 shrink-0">Available models</div>
@@ -751,7 +769,7 @@ export function ImageStudio() {
                                 <div class="w-10 h-10 ${m.featured ? 'bg-primary/10 text-primary' : 'bg-green-500/10 text-green-400'} border border-white/5 rounded-xl flex items-center justify-center font-black text-sm shadow-inner uppercase">${m.featured ? '⚡' : m.name.charAt(0)}</div>
                                 <div class="flex flex-col gap-0.5">
                                     <div class="flex items-center gap-1.5">
-                                        <span class="text-xs font-bold text-white tracking-tight">${m.name}</span>
+                                        <span class="text-xs font-bold text-secondary tracking-tight">${m.name}</span>
                                         ${m.featured ? '<span class="text-[9px] font-black px-1 py-0.5 rounded bg-primary/20 text-primary">FEATURED</span>' : ''}
                                     </div>
                                     <span class="text-[10px] text-muted">${m.type.toUpperCase()} · ${m.family}</span>
@@ -783,7 +801,7 @@ export function ImageStudio() {
                         <div class="flex items-center gap-3.5">
                              <div class="w-10 h-10 ${m.family === 'kontext' ? 'bg-blue-500/10 text-blue-400' : m.family === 'effects' ? 'bg-purple-500/10 text-purple-400' : 'bg-primary/10 text-primary'} border border-white/5 rounded-xl flex items-center justify-center font-black text-sm shadow-inner uppercase">${m.name.charAt(0)}</div>
                              <div class="flex flex-col gap-0.5">
-                                <span class="text-xs font-bold text-white tracking-tight">${m.name}</span>
+                                <span class="text-xs font-bold text-secondary tracking-tight">${m.name}</span>
                              </div>
                         </div>
                         ${selectedModel === m.id ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d9ff00" stroke-width="4"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
@@ -835,7 +853,7 @@ export function ImageStudio() {
                         <div class="w-6 h-6 border-2 border-white/20 rounded-md shadow-inner flex items-center justify-center group-hover:border-primary/50 transition-colors">
                              <div class="w-3 h-3 bg-white/10 rounded-sm"></div>
                         </div>
-                        <span class="text-xs font-bold text-white opacity-80 group-hover:opacity-100 transition-opacity">${r}</span>
+                        <span class="text-xs font-bold text-secondary group-hover:text-white transition-colors">${r}</span>
                     </div>
                      ${selectedAr === r ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d9ff00" stroke-width="4"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
                 `;
@@ -860,7 +878,7 @@ export function ImageStudio() {
                 const item = document.createElement('div');
                 item.className = 'flex items-center justify-between p-3.5 hover:bg-white/5 rounded-2xl cursor-pointer transition-all group';
                 item.innerHTML = `
-                    <span class="text-xs font-bold text-white opacity-80 group-hover:opacity-100">${opt}</span>
+                    <span class="text-xs font-bold text-secondary group-hover:text-white transition-colors">${opt}</span>
                      ${document.getElementById('quality-btn-label').textContent === opt ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d9ff00" stroke-width="4"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
                 `;
                 item.onclick = (e) => {
@@ -942,6 +960,22 @@ export function ImageStudio() {
     historyLabel.className = 'text-[9px] font-bold text-muted uppercase tracking-widest mb-2 rotate-0';
     historyLabel.textContent = 'History';
     historySidebar.appendChild(historyLabel);
+
+    // Clear History button
+    const clearHistoryBtn = document.createElement('button');
+    clearHistoryBtn.className = 'text-[9px] font-bold text-red-400/70 hover:text-red-400 uppercase tracking-wider mb-3 transition-colors';
+    clearHistoryBtn.textContent = '✕ Clear';
+    clearHistoryBtn.title = 'Clear all history';
+    clearHistoryBtn.onclick = () => {
+        if (confirm('Clear all generation history?')) {
+            generationHistory.length = 0;
+            localStorage.removeItem('muapi_history');
+            renderHistory();
+            historySidebar.classList.add('translate-x-full', 'opacity-0');
+            historySidebar.classList.remove('translate-x-0', 'opacity-100');
+        }
+    };
+    historySidebar.appendChild(clearHistoryBtn);
 
     const historyList = document.createElement('div');
     historyList.className = 'flex flex-col gap-2 w-full px-2';
@@ -1141,9 +1175,16 @@ export function ImageStudio() {
         picker.setMaxImages(1);
         // Reset to t2i mode
         imageMode = false;
-        selectedModel = t2iModels[0].id;
-        selectedModelName = t2iModels[0].name;
-        selectedAr = getAspectRatiosForModel(selectedModel)[0];
+        if (useLocalModel) {
+            const lm = getLocalModelById(selectedLocalModel);
+            selectedModel = lm?.id || selectedLocalModel;
+            selectedModelName = lm?.name || 'Local';
+            selectedAr = lm?.aspectRatios?.[0] || '1:1';
+        } else {
+            selectedModel = t2iModels[0].id;
+            selectedModelName = t2iModels[0].name;
+            selectedAr = getAspectRatiosForModel(selectedModel)[0];
+        }
         document.getElementById('model-btn-label').textContent = selectedModelName;
         document.getElementById('ar-btn-label').textContent = selectedAr;
         const resetResolutions = getResolutionsForModel(selectedModel);

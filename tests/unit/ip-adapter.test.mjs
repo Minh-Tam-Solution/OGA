@@ -147,10 +147,10 @@ describe('IP-Adapter — models.json', () => {
         expect(ip.frontend_ids).toContain('ip-adapter');
     });
 
-    it('has AnimateDiff entry', () => {
+    // AnimateDiff retired after Sprint 7 spike FAIL — see ADR-005 v2.0
+    // Cinema Studio remains cloud-only; no local AnimateDiff entry expected.
+    it('does NOT have retired AnimateDiff entry', () => {
         const ad = models.find(m => m.id === 'guoyww/animatediff-motion-adapter-v1-5-2');
-        expect(ad).toBeDefined();
-        expect(ad.model_type).toBe('diffusers');
-        expect(ad.features).toContain('cinema');
+        expect(ad).toBeUndefined();
     });
 });
