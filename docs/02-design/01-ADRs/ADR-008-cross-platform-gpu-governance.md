@@ -117,6 +117,18 @@ RULE-VRAM-001 currently governs OGA video pipelines only. ADR-008 extends govern
 | **Audit trail** | Every admission/rejection/eviction logged with consumer ID + timestamp |
 | **Graceful degradation** | CPU fallback preferred over GPU queue starvation |
 
+> **Footnote 2026-05-12 — F6 spike outcome**: Per F6 spike, `pnnbao/vieneu-tts:serve`
+> upstream image is `linux/amd64` only, no `arm64` manifest. PyTorch
+> MPS requires native arm64. VieNeu is therefore unavailable on Apple
+> Silicon hardware (Mac Mini M4 Pro production target). D2's
+> "GPU-only" stance compounds with this distribution constraint — both
+> together close the path to VieNeu on the production cutover host.
+> Path C.3 (replace) is the resulting WS-C decision.
+>
+> Sources: `docs/05-test/spike-vineu-mps-ceo-m4pro-2026-05-11.md`,
+> `docs/08-collaborate/CTO-DISPOSITION-F6-vineu-mps-2026-05-11.md`,
+> `docs/08-collaborate/CTO-RATIFY-aiplatform-f6-response-2026-05-12.md`.
+
 ### D3: Handoff Signal Options
 
 Three candidate mechanisms for consumers to coordinate GPU handoff:

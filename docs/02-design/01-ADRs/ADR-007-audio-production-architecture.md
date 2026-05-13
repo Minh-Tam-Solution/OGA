@@ -1,9 +1,9 @@
 ---
 adr_id: ADR-007
 title: "Audio Production Architecture — OGA as Consumer of AI-Platform Voice Services"
-status: "Accepted — G2 AUDIO PRODUCTION PASS (Spike E v2 CEO+Hùng both PASS, 2026-05-10)"
-date: 2026-05-09
-revised: 2026-05-10 (v4 — post-re-test empirical update)
+status: "ACCEPTED — VieNeu CANCELLED per F6 spike 2026-05-11; production stack = Piper primary + MeloTTS fallback"
+date: 2026-05-12
+revised: "v5 2026-05-12 — VieNeu status flip DEFERRED → CANCELLED across all sections"
 deciders: ["@cto", "@architect", "@cpo"]
 gate: G2 (post-spike)
 cpo_cosign: "2026-05-10"
@@ -34,7 +34,7 @@ G2 ready to open upon:
 |------|--------------|--------|
 | Piper Vietnamese (primary) | End-to-end verified 2026-05-10 | ✅ **READY** |
 | MeloTTS Vietnamese (fallback) | Adapter + registry seeded; image non-persistent | ✅ **READY** (S118 rebuild required for persistence) |
-| VieNeu Vietnamese (default) | Adapter deferred S118; GPU OOM upstream | ⏳ **DEFERRED** |
+| VieNeu Vietnamese (default) | F6 spike 2026-05-11: upstream `pnnbao/vieneu-tts:serve` amd64-only, no Apple Silicon → cannot reach Mac Mini production | ❌ **CANCELLED** |
 | IndexTTS2 English | 3/4 pass + VN FAIL | ⏳ **DEFERRED** |
 
 ---
@@ -63,7 +63,7 @@ OGA Frontend/Backend (Next.js)
               └── AI-Platform Voice Service (:8121)
                   ├── TTS Orchestrator (tts_service.py)
                   │   ├── Voice registry lookup (voice.tts_voices)
-                  │   ├── Adapter routing (melotts | piper | vineu)
+                  │   ├── Adapter routing (piper | melotts) — vineu removed post-F6
                   │   ├── Text normalization (vn_text_normalizer)
                   │   ├── Watermark embed (AudioSeal)
                   │   ├── MinIO upload + presigned URL
@@ -71,7 +71,7 @@ OGA Frontend/Backend (Next.js)
                   └── Returns: {audio_url, duration_ms, engine, voice_id, ...}
 ```
 
-**Boundary rule:** No Python import of `melo`, `piper`, `vineu`, or any TTS library into OGA's Next.js process. REST only.
+**Boundary rule:** No Python import of `melo`, `piper`, or any TTS library into OGA's Next.js process. REST only. (VieNeu cancelled post-F6 — no longer in scope.)
 
 ### D2: Voice Routing Strategy
 
@@ -83,6 +83,8 @@ OGA Frontend/Backend (Next.js)
 | Code-switch vi-en | `vi-en` | `vi-piper-vais1000` | piper | — |
 
 > **2026-05-10 update:** VieNeu (`vi-vineu-southern-male`) removed from default chain. Adapter deferred S118; registry rows are residue only. Piper promoted to primary VN voice pending Spike E v2 Hùng sign-off.
+>
+> **2026-05-11 update:** F6 MPS compatibility spike on CEO M4 Pro 24G returned **FAIL** in 10 minutes — upstream `pnnbao/vieneu-tts:serve` ships `linux/amd64` only with no `arm64` manifest. VieNeu **cannot** reach the Mac Mini M4 Pro 48G production target. Status moves from DEFERRED → **CANCELLED**. 2-engine stack (Piper primary, MeloTTS fallback) is the ratified production configuration. See `docs/05-test/spike-vineu-mps-ceo-m4pro-2026-05-11.md` and `docs/08-collaborate/CTO-DISPOSITION-F6-vineu-mps-2026-05-11.md`.
 
 **Selection logic:**
 1. Caller explicitly provides `voice_id` → registry resolves engine
@@ -95,7 +97,7 @@ OGA Frontend/Backend (Next.js)
 **Current truth (2026-05-10, post-re-test):**
 - **Piper** = primary production voice (`vi-piper-vais1000`, `vi-piper-central`). End-to-end verified. Low latency (~330ms), 22050Hz.
 - **MeloTTS** = fallback voice (`vi-melotts-default`). **NOW CALLABLE** via gateway (200 OK confirmed). Higher latency (~3.2s first inference), 44100Hz. Container changes (melo VN package + deps) are **non-persistent** — must be baked into image by AI-Platform PJM before S118 close.
-- **VieNeu** = adapter deferred S118; registry rows are residue → returns 503 if called
+- **VieNeu** = cancelled post-F6; registry rows scheduled for removal pending AI-Platform CTO countersign (2026-05-15 EOD)
 
 | Criterion | Piper | MeloTTS |
 |-----------|-------|---------|
@@ -114,14 +116,14 @@ OGA Frontend/Backend (Next.js)
 **Rule (Track B consumer code):**
 - **Default production traffic** → Piper (`vi-piper-vais1000`)
 - **MeloTTS fallback** → Auto-fallback on `voice_not_found` or 503 via `aiPlatformVoiceClient`
-- **VieNeu future** → Evaluate when S118 adapter fix lands + GPU available (ollama must be stopped)
+- ~~**VieNeu future** → Evaluate when S118 adapter fix lands + GPU available~~ — **CANCELLED 2026-05-11 per F6.** Re-evaluation only possible if upstream ships arm64 build (request issued to maintainer `pnnbao` with 14-day window).
 
 **Defect #20 (MinIO presigned URL):** `audio_url` returns internal DNS (`ai-platform-minio:9000`). Host-level fetch fails. Workarounds:
 1. Fetch audio from inside `ai-net` / `ai-platform_ai-platform-network` container
 2. Gateway streaming proxy (S118(p) fix)
 3. Host `/etc/hosts` override + port 9020 (signature may still mismatch)
 
-**Spike E v2:** Piper vs MeloTTS A/B. See `docs/04-build/sprints/sprint-12/spike-e-results.md`. VieNeu unavailable → deferred evaluation.
+**Spike E v2:** Piper vs MeloTTS A/B. See `docs/04-build/sprints/sprint-12/spike-e-results.md`. **VieNeu cancelled per F6 (2026-05-11) — no further evaluation planned.**
 
 ---
 
@@ -145,7 +147,7 @@ OGA Frontend/Backend (Next.js)
 | 1 | MeloTTS baseline samples (5/5 valid WAV) | ✅ DONE | 2026-05-06 |
 | 2 | Piper samples via AI-Platform gateway (5/5 valid WAV) | ✅ DONE | 2026-05-10 |
 | 3 | Hùng blind A/B Piper vs MeloTTS | ⏳ PENDING | TBD |
-| 4 | VieNeu evaluation | ⏳ DEFERRED | Blocked: GPU OOM + AI-Platform S118 |
+| 4 | ~~VieNeu evaluation~~ | ❌ CANCELLED | F6 spike 2026-05-11: upstream amd64-only |
 
 **Spike E v2 disposition gates:**
 - Piper mean ≥ MeloTTS mean → confirm Piper as production voice
@@ -228,8 +230,8 @@ const VALID_VOICES = {
         { id: "vi-piper-vais1000", status: "primary", engine: "piper" },
         { id: "vi-piper-central", status: "alternate", engine: "piper" },
         { id: "vi-melotts-default", status: "fallback", engine: "melotts" },
-        // VieNeu deferred S118:
-        // { id: "vi-vineu-southern-male", status: "deferred", engine: "vineu" },
+        // VieNeu CANCELLED 2026-05-11 per F6 — upstream amd64-only:
+        // { id: "vi-vineu-southern-male", status: "cancelled", engine: "vineu" },
     ],
     en: [
         { id: "en-piper-libritts-f", status: "primary", engine: "piper" },
@@ -277,7 +279,7 @@ GPU Server S1: RTX 5090 32GB
 | OGA Video (Wan2.1) | ~11 GB | Hot-swapped, idle-unload after 300s |
 | OGA Video (LTX) | ~9 GB | Hot-swapped, idle-unload after 300s |
 | OGA Video (CogVideoX) | ~14 GB | Monopolizes GPU; unload before any TTS |
-| **VieNeu-TTS** | **~2-4GB** | **GPU-preferred**; **DEFERRED S118** |
+| ~~VieNeu-TTS~~ | ~~~2-4GB~~ | ❌ **CANCELLED 2026-05-11** — not viable on Mac Mini (upstream amd64-only) |
 | **MeloTTS Vietnamese** | **0 GB** | **CPU-only** — no VRAM conflict |
 | **Piper TTS** | **0 GB** | **CPU-only (ONNX)** |
 | **IndexTTS2** | **~5.3 GB idle, ~21.5 GB peak** | **DEFERRED** — EN-only future path |
@@ -319,7 +321,7 @@ Docker Compose:     bflow-ai-platform-voice (part of AI-Platform stack)
 
 | Engine | Host Path | Container Path | Files |
 |--------|-----------|----------------|-------|
-| VieNeu | `/opt/nqh/vineu-tts-v2-turbo/` | `/models/vineu-tts-v2-turbo/` | Model weights |
+| ~~VieNeu~~ | ~~`/opt/nqh/vineu-tts-v2-turbo/`~~ | ~~`/models/vineu-tts-v2-turbo/`~~ | **Cancelled — model not deployed; cleanup ticket if any residue** |
 | MeloTTS | `/opt/nqh/melotts-vn/models/` | `/models/melotts-vietnamese/` | `config.json`, `G_463000.pth` |
 | Piper | `/opt/nqh/piper-voices/` | `/models/piper-voices/` | `.onnx`, `.onnx.json` |
 
@@ -344,7 +346,7 @@ INSERT INTO voice.tts_voices (
     null, 44100, 'preset', 'active', '{}', '{"oga-studio","mop-app"}'
 );
 
--- VieNeu (deferred — registry residue only)
+-- VieNeu CANCELLED 2026-05-11 per F6 spike — DO NOT INSERT
 -- INSERT INTO voice.tts_voices (...) VALUES ('vi-vineu-southern-male', ...);
 -- NOTE: Requires ALTER TABLE voice.tts_voices DROP CONSTRAINT ck_tts_voices_engine;
 --       Then ADD CONSTRAINT with 'melotts' in allowed array.
@@ -399,7 +401,7 @@ INSERT INTO voice.tts_voices (
 
 ---
 
-*ADR-007 v4 | Accepted 2026-05-10 | Revised 2026-05-10 | AI-Platform consumer model | G2 AUDIO PRODUCTION PASS*
+*ADR-007 v5 | 2026-05-12 | VieNeu CANCELLED per F6; production = Piper + MeloTTS | Supersedes v4*
 >
 > **Final Note (G2 promotion):**
 > - Spike E v2 reviewers (both PASS): CEO Tai Dang + Hùng (Marketing Manager)
